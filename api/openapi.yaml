@@ -1,0 +1,242 @@
+openapi: 3.0.3
+info:
+  title: JAST Core API
+  version: "1.0.0"
+  description: >
+    Minimal REST surface for the JAST core matching engine (JATS-style continuous
+    matching for Bursa Efek Indonesia). The engine knows only brokers
+    (participants), not individual investors, and stops at trade execution.
+
+
+    Orders enter only through `POST /orders`. The order book can be polled via
+    `GET /orderbook/{kode}` or streamed via the WebSocket endpoint
+    `GET /ws/orderbook/{kode}` (documented below; not exercisable from Swagger UI).
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+paths:
+  /orders:
+    post:
+      summary: Submit a new order
+      description: >
+        Runs the order through continuous matching and returns the trades it
+        produced. A limit order with leftover quantity rests in the book
+        (`open`); a market order with leftover quantity is `cancelled` and never
+        booked. Validation (emiten/participant existence, qty > 0, price > 0 for
+        limit) happens in the API layer, not the engine.
+      operationId: submitOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitOrderRequest'
+            examples:
+              limitBuy:
+                summary: Limit buy
+                value:
+                  emiten: BBCA
+                  participant: YP
+                  side: buy
+                  type: limit
+                  price: 8000
+                  qty: 100
+              marketSell:
+                summary: Market sell (price omitted)
+                value:
+                  emiten: BBCA
+                  participant: PD
+                  side: sell
+                  type: market
+                  qty: 50
+      responses:
+        "200":
+          description: Order processed. Contains the resulting order state and any trades.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitOrderResponse'
+              examples:
+                filled:
+                  summary: Fully filled buy across two levels
+                  value:
+                    order: { id: 3, status: filled, remaining: 0 }
+                    trades:
+                      - { price: 8000, qty: 100, buy_order_id: 3, sell_order_id: 1 }
+                      - { price: 8050, qty: 20, buy_order_id: 3, sell_order_id: 2 }
+        "400":
+          description: Validation error (unknown emiten/participant, bad side/type, qty <= 0, price <= 0 for limit).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "500":
+          description: Persistence failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /orderbook/{kode}:
+    get:
+      summary: Get the current order book for an emiten
+      description: >
+        Returns the book aggregated by price level. Bids are highest price first;
+        asks are lowest price first.
+      operationId: getOrderBook
+      parameters:
+        - name: kode
+          in: path
+          required: true
+          description: Emiten code (e.g. BBCA).
+          schema:
+            type: string
+          example: BBCA
+      responses:
+        "200":
+          description: Current book state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookSnapshot'
+              example:
+                emiten: BBCA
+                bids: []
+                asks:
+                  - { price: 8050, qty: 30 }
+        "404":
+          description: Unknown emiten.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ws/orderbook/{kode}:
+    get:
+      summary: "WebSocket: stream order book updates (documentation only)"
+      description: >
+        Upgrades to a WebSocket connection. On connect the server sends a full
+        snapshot (same shape as GET /orderbook, with `type: "update"`), then a
+        fresh full snapshot every time the book for this emiten changes. The
+        stream is outbound-only; orders are never accepted over WebSocket.
+
+
+        This endpoint cannot be exercised from Swagger UI (it is not plain HTTP).
+        Connect with a WebSocket client, e.g.
+        `ws://localhost:8080/ws/orderbook/BBCA`.
+      operationId: streamOrderBook
+      parameters:
+        - name: kode
+          in: path
+          required: true
+          schema:
+            type: string
+          example: BBCA
+      responses:
+        "101":
+          description: Switching Protocols (WebSocket handshake accepted).
+        "404":
+          description: Unknown emiten.
+
+components:
+  schemas:
+    SubmitOrderRequest:
+      type: object
+      required: [emiten, participant, side, type, qty]
+      properties:
+        emiten:
+          type: string
+          description: Emiten code.
+          example: BBCA
+        participant:
+          type: string
+          description: Participant (broker) code.
+          example: YP
+        side:
+          type: string
+          enum: [buy, sell]
+        type:
+          type: string
+          enum: [limit, market]
+        price:
+          type: integer
+          format: int64
+          description: >
+            Whole rupiah. Required (> 0) for limit orders; ignored / treated as 0
+            for market orders. Never a float.
+          example: 8000
+        qty:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 100
+    SubmitOrderResponse:
+      type: object
+      properties:
+        order:
+          $ref: '#/components/schemas/OrderView'
+        trades:
+          type: array
+          items:
+            $ref: '#/components/schemas/TradeView'
+    OrderView:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [open, filled, cancelled]
+        remaining:
+          type: integer
+          format: int64
+    TradeView:
+      type: object
+      properties:
+        price:
+          type: integer
+          format: int64
+          description: Execution price = the passive (resting) order's price.
+        qty:
+          type: integer
+          format: int64
+        buy_order_id:
+          type: integer
+          format: int64
+        sell_order_id:
+          type: integer
+          format: int64
+    BookSnapshot:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Present ("update") on WebSocket pushes; omitted on REST responses.
+          example: update
+        emiten:
+          type: string
+          example: BBCA
+        bids:
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceLevel'
+        asks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceLevel'
+    PriceLevel:
+      type: object
+      properties:
+        price:
+          type: integer
+          format: int64
+        qty:
+          type: integer
+          format: int64
+    Error:
+      type: object
+      properties:
+        error:
+          type: string

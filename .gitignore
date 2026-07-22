@@ -1,0 +1,38 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bekasi-automatic-trading-system
+/main
+
+# Test & coverage output
+*.test
+*.out
+coverage.*
+
+# Local environment — never commit secrets/DSN. .env.example IS committed.
+.env
+.env.local
+*.env
+!.env.example
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs & temp
+*.log
+tmp/
+*.claude
