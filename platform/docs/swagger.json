@@ -1,10 +1,241 @@
 {
     "components": {
         "schemas": {
+            "assets.HoldingView": {
+                "properties": {
+                    "amount_shared": {
+                        "description": "Shares held.",
+                        "example": 1000000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "emiten": {
+                        "example": "BBCA",
+                        "type": "string"
+                    },
+                    "last_price": {
+                        "description": "Most recent execution price for this emiten. Null if never traded.",
+                        "example": 8050,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "participant": {
+                        "example": "YP",
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "description": "When this holding last changed.",
+                        "example": "2026-07-30T09:15:02Z",
+                        "type": "string"
+                    },
+                    "value": {
+                        "description": "Market value: last_price × amount_shared. Derived on read, so it always\nreflects the latest trade even when this broker did not trade. Null if the\ninstrument has never traded.",
+                        "example": 8050000000,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "emiten.CreateRequest": {
+                "properties": {
+                    "kode": {
+                        "description": "Instrument code, unique across the exchange.",
+                        "example": "BBNI",
+                        "type": "string"
+                    },
+                    "listed_shares": {
+                        "description": "Publicly tradeable shares. Must be \u003e 0.",
+                        "example": 18462169893,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "nama": {
+                        "description": "Company name.",
+                        "example": "Bank Negara Indonesia Tbk",
+                        "type": "string"
+                    },
+                    "unlisted_shares": {
+                        "description": "Restricted shares not available for trading. Defaults to 0.",
+                        "example": 0,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "kode",
+                    "listed_shares",
+                    "nama"
+                ],
+                "type": "object"
+            },
+            "emiten.EmitenDetail": {
+                "properties": {
+                    "current_price": {
+                        "description": "Most recent execution price. Null if never traded.",
+                        "example": 8050,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "free_float_percentage": {
+                        "description": "Share of total shares that is publicly tradeable. Null when there are no\nshares at all. Always sums to 100 with UnlistedPercentage.",
+                        "example": 99.2,
+                        "type": "number"
+                    },
+                    "highest_price": {
+                        "description": "Highest price ever executed. Null if never traded.",
+                        "example": 8200,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "is_active": {
+                        "description": "Whether the instrument accepts new orders.",
+                        "example": true,
+                        "type": "boolean"
+                    },
+                    "kode": {
+                        "example": "BBCA",
+                        "type": "string"
+                    },
+                    "listed_shares": {
+                        "example": 123275050000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "lowest_price": {
+                        "description": "Lowest price ever executed. Null if never traded.",
+                        "example": 7800,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "nama": {
+                        "example": "Bank Central Asia Tbk",
+                        "type": "string"
+                    },
+                    "total_shares": {
+                        "example": 124275050000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "unlisted_percentage": {
+                        "description": "Share of total shares that is restricted. Null when there are no shares.",
+                        "example": 0.8,
+                        "type": "number"
+                    },
+                    "unlisted_shares": {
+                        "example": 1000000000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "value": {
+                        "description": "Market capitalisation: current price × total shares. Null if never traded.",
+                        "example": 1000414152500000,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "emiten.EmitenView": {
+                "properties": {
+                    "is_active": {
+                        "description": "Whether the instrument accepts new orders. An inactive emiten still has a\nreadable book and history.",
+                        "example": true,
+                        "type": "boolean"
+                    },
+                    "kode": {
+                        "example": "BBCA",
+                        "type": "string"
+                    },
+                    "listed_shares": {
+                        "example": 123275050000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "nama": {
+                        "example": "Bank Central Asia Tbk",
+                        "type": "string"
+                    },
+                    "total_shares": {
+                        "example": 124275050000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "unlisted_shares": {
+                        "example": 1000000000,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
             "httpx.ErrorResponse": {
                 "properties": {
                     "error": {
                         "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpx.Page-assets_HoldingView": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/assets.HoldingView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpx.Page-emiten_EmitenView": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/emiten.EmitenView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpx.Page-order_OrderHistoryView": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/order.OrderHistoryView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
                     }
                 },
                 "type": "object"
@@ -26,6 +257,134 @@
                     },
                     "total": {
                         "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpx.Page-trade_TickView": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/trade.TickView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpx.Page-trade_TradeView": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/trade.TradeView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpx.Page-trade_TransactionView": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/trade.TransactionView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "order.OrderHistoryView": {
+                "properties": {
+                    "emiten": {
+                        "example": "BBCA",
+                        "type": "string"
+                    },
+                    "id": {
+                        "example": 31,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "participant": {
+                        "example": "YP",
+                        "type": "string"
+                    },
+                    "price": {
+                        "description": "0 for a market order, which carries no price.",
+                        "example": 8000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "qty": {
+                        "example": 100,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "remaining": {
+                        "description": "Quantity not yet filled.",
+                        "example": 0,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "seq": {
+                        "example": 31,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "side": {
+                        "enum": [
+                            "buy",
+                            "sell"
+                        ],
+                        "example": "buy",
+                        "type": "string"
+                    },
+                    "status": {
+                        "enum": [
+                            "open",
+                            "filled",
+                            "cancelled"
+                        ],
+                        "example": "filled",
+                        "type": "string"
+                    },
+                    "type": {
+                        "enum": [
+                            "limit",
+                            "market"
+                        ],
+                        "example": "limit",
+                        "type": "string"
                     }
                 },
                 "type": "object"
@@ -199,28 +558,1308 @@
                     }
                 },
                 "type": "object"
+            },
+            "participant.CreateRequest": {
+                "properties": {
+                    "kode": {
+                        "description": "Broker code, unique across the exchange.",
+                        "example": "BB",
+                        "type": "string"
+                    },
+                    "nama": {
+                        "description": "Broker display name.",
+                        "example": "Broker B",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "kode",
+                    "nama"
+                ],
+                "type": "object"
+            },
+            "participant.IssuedKeyResponse": {
+                "properties": {
+                    "api_key": {
+                        "description": "The full API key. Store it now; it is not retrievable later.",
+                        "example": "jast_BB_9xQ2mR7tL4nK8wZ3yB6cF1hJ5dS0gAv2",
+                        "type": "string"
+                    },
+                    "kode": {
+                        "example": "BB",
+                        "type": "string"
+                    },
+                    "nama": {
+                        "example": "Broker B",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "participant.KeyRequest": {
+                "properties": {
+                    "participant": {
+                        "example": "YP",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "participant"
+                ],
+                "type": "object"
+            },
+            "participant.ParticipantView": {
+                "properties": {
+                    "api_key_issued_at": {
+                        "description": "When the current key was issued. Null when none is issued.",
+                        "example": "2026-07-30T09:14:22Z",
+                        "type": "string"
+                    },
+                    "api_key_prefix": {
+                        "description": "Leading fragment of the key, for identification. Null when none is issued.",
+                        "example": "jast_YP_8fK2",
+                        "type": "string"
+                    },
+                    "has_api_key": {
+                        "description": "Whether a key has been issued to this broker.",
+                        "example": true,
+                        "type": "boolean"
+                    },
+                    "kode": {
+                        "example": "YP",
+                        "type": "string"
+                    },
+                    "nama": {
+                        "example": "Mirae Asset Sekuritas",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "trade.CandleView": {
+                "properties": {
+                    "close": {
+                        "example": 8050,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "high": {
+                        "example": 8100,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "low": {
+                        "example": 7950,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "open": {
+                        "example": 8000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "time": {
+                        "description": "Start of the bucket, UTC-aligned.",
+                        "example": "2026-07-30T09:00:00Z",
+                        "type": "string"
+                    },
+                    "volume": {
+                        "example": 12400,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "trade.TickView": {
+                "properties": {
+                    "executed_at": {
+                        "example": "2026-07-30T09:15:02Z",
+                        "type": "string"
+                    },
+                    "price": {
+                        "example": 8050,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "qty": {
+                        "example": 30,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "seq": {
+                        "example": 412,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "trade.TradeView": {
+                "properties": {
+                    "buy_order_id": {
+                        "example": 31,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "buyer": {
+                        "example": "YP",
+                        "type": "string"
+                    },
+                    "emiten": {
+                        "example": "BBCA",
+                        "type": "string"
+                    },
+                    "executed_at": {
+                        "example": "2026-07-30T09:15:02Z",
+                        "type": "string"
+                    },
+                    "id": {
+                        "example": 412,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "price": {
+                        "example": 8000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "qty": {
+                        "example": 500,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "sell_order_id": {
+                        "example": 28,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "seller": {
+                        "example": "PD",
+                        "type": "string"
+                    },
+                    "seq": {
+                        "example": 412,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "value": {
+                        "example": 4000000,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "trade.TransactionView": {
+                "properties": {
+                    "counterparty": {
+                        "description": "The broker on the other side.",
+                        "example": "PD",
+                        "type": "string"
+                    },
+                    "emiten": {
+                        "example": "BBCA",
+                        "type": "string"
+                    },
+                    "executed_at": {
+                        "example": "2026-07-30T09:15:02Z",
+                        "type": "string"
+                    },
+                    "price": {
+                        "example": 8000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "qty": {
+                        "example": 500,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "seq": {
+                        "example": 412,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "side": {
+                        "description": "Which side this broker was on.",
+                        "enum": [
+                            "buy",
+                            "sell"
+                        ],
+                        "example": "buy",
+                        "type": "string"
+                    },
+                    "trade_id": {
+                        "example": 412,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "value": {
+                        "description": "price × qty.",
+                        "example": 4000000,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
             }
         },
         "securitySchemes": {
             "ApiKeyAuth": {
-                "description": "Shared API key. Every route except the documentation requires it.",
+                "description": "Static administrative key, from configuration. Guards every /api/admin route.",
                 "in": "header",
                 "name": "X-API-Key",
                 "type": "apiKey"
+            },
+            "ParticipantKeyAuth": {
+                "description": "Per-broker key, issued by an admin and stored hashed. Guards every /api/participant route. Returned once at issue and never retrievable again.",
+                "in": "header",
+                "name": "X-Participant-Key",
+                "type": "apiKey"
             }
         }
-    },
-    "info": {
-        "description": "REST surface for the JAST core matching engine (JATS-style continuous\nmatching for Bursa Efek Indonesia). The engine knows only brokers\n(participants), not individual investors, and stops at trade execution.\n\nOrders enter only through POST /api/orders. The order book can be polled\nvia GET /api/orderbook/{kode} or streamed over WebSocket at\nGET /ws/orderbook/{kode} (documented, but not exercisable from Swagger UI).",
-        "title": "JAST Core API",
-        "version": "1.0.0"
     },
     "externalDocs": {
         "description": "",
         "url": ""
     },
+    "info": {
+        "description": "REST surface for the JAST core matching engine (JATS-style continuous\nmatching for Bursa Efek Indonesia). The engine knows only brokers\n(participants), not individual investors, and stops at trade execution.\n\n\nThere are two authentication tiers, and they never mix:\n\n- **Participant** (`/api/participant/*`, `/ws/participant/*`) — a broker\nauthenticates with its own key, stored hashed in the database and sent as\n`X-Participant-Key`. Keys are issued and revoked per broker at runtime.\n- **Admin** (`/api/admin/*`, `/ws/admin/*`) — the single static key from\nconfiguration, sent as `X-API-Key`.\n\nOrders enter only through POST /api/participant/orders. The order book can\nbe polled or streamed over WebSocket (documented, but not exercisable from\nSwagger UI, since browsers cannot set headers on a WS handshake).",
+        "title": "JAST Core API",
+        "version": "1.0.0"
+    },
+    "openapi": "3.0.3",
     "paths": {
-        "/api/orderbook": {
+        "/api/admin/assets": {
+            "get": {
+                "description": "Every broker's holdings, or one broker's when `participant` is given.",
+                "operationId": "listAssets",
+                "parameters": [
+                    {
+                        "description": "Filter by broker code",
+                        "example": "YP",
+                        "in": "query",
+                        "name": "participant",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-assets_HoldingView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown participant"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Share holdings across brokers",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/emiten": {
+            "get": {
+                "description": "Master data for every emiten, ordered by code. Price statistics are\ndeliberately excluded — computing them per row would be a query per\ninstrument. Use the detail endpoint for those.",
+                "operationId": "listEmiten",
+                "parameters": [
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-emiten_EmitenView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "List listed instruments",
+                "tags": [
+                    "admin"
+                ]
+            },
+            "post": {
+                "description": "Creates an emiten and registers it with an empty order book, so it is\ntradeable immediately — no restart required. It starts active.",
+                "operationId": "createEmiten",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/emiten.CreateRequest",
+                                        "description": "Instrument to list",
+                                        "summary": "body"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Instrument to list",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/emiten.EmitenView"
+                                }
+                            }
+                        },
+                        "description": "Created"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing kode/nama, or listed_shares \u003c= 0"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Instrument code already exists"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "List a new instrument",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/orders": {
+            "get": {
+                "description": "Every order ever submitted, newest first, optionally filtered by emiten,\nparticipant, or status. This is the audit trail; the live book is served\nby the orderbook endpoints.",
+                "operationId": "listOrders",
+                "parameters": [
+                    {
+                        "description": "Filter by emiten code",
+                        "example": "BBCA",
+                        "in": "query",
+                        "name": "emiten",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by broker code",
+                        "example": "YP",
+                        "in": "query",
+                        "name": "participant",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by status",
+                        "in": "query",
+                        "name": "status",
+                        "schema": {
+                            "enum": [
+                                "open",
+                                "filled",
+                                "cancelled"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-order_OrderHistoryView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten/participant, or bad status"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "List order history",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/participants": {
+            "get": {
+                "description": "Every exchange participant, ordered by code. API keys are **not** included\nand cannot be: only their hashes are stored. The prefix identifies which\nkey is in place without exposing it.",
+                "operationId": "listParticipants",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/participant.ParticipantView"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "List brokers",
+                "tags": [
+                    "admin"
+                ]
+            },
+            "post": {
+                "description": "Registers an exchange participant and issues its first API key.\nThe key is returned **once, in this response only** — it is stored as a\nSHA-256 hash and cannot be retrieved again. A lost key is re-issued, not\nrecovered.",
+                "operationId": "createParticipant",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/participant.CreateRequest",
+                                        "description": "Broker to create",
+                                        "summary": "body"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Broker to create",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/participant.IssuedKeyResponse"
+                                }
+                            }
+                        },
+                        "description": "Created; contains the only copy of the key"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing kode or nama"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Broker code already exists"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Create a broker",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/participants/apikey": {
+            "delete": {
+                "description": "Removes the key. The next request carrying it is rejected immediately —\nauthentication reads the database rather than a cache, so revocation is\nnot delayed by an expiry.",
+                "operationId": "revokeParticipantKey",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/participant.KeyRequest",
+                                        "description": "Target broker",
+                                        "summary": "body"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Target broker",
+                    "required": true
+                },
+                "responses": {
+                    "204": {
+                        "description": "Revoked"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown participant"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Revoke a broker's API key",
+                "tags": [
+                    "admin"
+                ]
+            },
+            "post": {
+                "description": "Mints a new key and invalidates the previous one immediately. The key is\nreturned once and never again. The target broker travels in the body, not\nthe path, so no identifier lands in access or proxy logs.",
+                "operationId": "issueParticipantKey",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/participant.KeyRequest",
+                                        "description": "Target broker",
+                                        "summary": "body"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Target broker",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/participant.IssuedKeyResponse"
+                                }
+                            }
+                        },
+                        "description": "The only copy of the new key"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown participant"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Re-issue a broker's API key",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/trades": {
+            "get": {
+                "description": "The raw execution log, newest first, optionally filtered by emiten or\nparticipant. Each row is one buy order matched against one sell order.",
+                "operationId": "listTrades",
+                "parameters": [
+                    {
+                        "description": "Filter by emiten code",
+                        "example": "BBCA",
+                        "in": "query",
+                        "name": "emiten",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by broker code",
+                        "example": "YP",
+                        "in": "query",
+                        "name": "participant",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-trade_TradeView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten or participant filter"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "List executions",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/transactions": {
+            "get": {
+                "description": "Fills seen from a broker's own side. Omit `participant` to include every\nbroker. A broker that matched its own resting order appears twice for\nthat execution, once per side.",
+                "operationId": "adminTransactions",
+                "parameters": [
+                    {
+                        "description": "Broker code",
+                        "example": "YP",
+                        "in": "query",
+                        "name": "participant",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by emiten code",
+                        "example": "BBCA",
+                        "in": "query",
+                        "name": "emiten",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-trade_TransactionView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "participant is required"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown participant or emiten"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Transaction history for any broker",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/participant/assets": {
+            "get": {
+                "description": "Every instrument the authenticated broker holds, with the current market\nvalue of each.\n\nThe broker is taken from the API key and this endpoint accepts no\n`participant` parameter, so one broker cannot read another's positions.\n\nvalue is derived from the latest trade price rather than stored, so it is\ncurrent even when this broker has not traded. It is null when the\ninstrument has never traded.",
+                "operationId": "myAssets",
+                "parameters": [
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-assets_HoldingView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-Participant-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    }
+                ],
+                "summary": "Own share holdings",
+                "tags": [
+                    "participant"
+                ]
+            }
+        },
+        "/api/participant/emiten/{kode}": {
+            "get": {
+                "description": "Master data plus all-time price statistics and derived valuations.\n\ncurrent_price, highest_price, lowest_price and value are **null**, not 0,\nfor an instrument that has never traded — no price exists yet, which is\nnot the same as a price of zero.\n\nvalue is market capitalisation (current price × total shares), derived on\nread rather than stored, so it always reflects the latest trade.\nfree_float_percentage is the publicly tradeable share of the total and\nalways sums to 100 with unlisted_percentage.",
+                "operationId": "getEmitenDetail",
+                "parameters": [
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/emiten.EmitenDetail"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-Participant-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    }
+                ],
+                "summary": "Get instrument detail",
+                "tags": [
+                    "participant"
+                ]
+            }
+        },
+        "/api/participant/emiten/{kode}/candles": {
+            "get": {
+                "description": "Executions aggregated into open/high/low/close bars with volume, newest\nbar first. Buckets are UTC-aligned. Open and close follow execution\norder, so two trades sharing a timestamp still resolve correctly.",
+                "operationId": "emitenCandles",
+                "parameters": [
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Bucket width",
+                        "in": "query",
+                        "name": "interval",
+                        "schema": {
+                            "default": "1h",
+                            "enum": [
+                                "1m",
+                                "5m",
+                                "1h",
+                                "1d"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/trade.CandleView"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unsupported interval"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-Participant-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    }
+                ],
+                "summary": "Price history (OHLC candles)",
+                "tags": [
+                    "participant"
+                ]
+            }
+        },
+        "/api/participant/emiten/{kode}/prices": {
+            "get": {
+                "description": "Every execution for an instrument, newest first. Build candles from this\nclient-side, or use the candles endpoint.",
+                "operationId": "emitenTicks",
+                "parameters": [
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-trade_TickView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-Participant-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    }
+                ],
+                "summary": "Price history (raw executions)",
+                "tags": [
+                    "participant"
+                ]
+            }
+        },
+        "/api/participant/orderbook": {
             "get": {
                 "description": "Returns a paginated list of the current order books, ordered by emiten code.",
                 "operationId": "getOrderBooks",
@@ -266,21 +1905,21 @@
                                 }
                             }
                         },
-                        "description": "Missing or wrong X-API-Key"
+                        "description": "Missing or wrong X-Participant-Key"
                     }
                 },
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "ParticipantKeyAuth": []
                     }
                 ],
                 "summary": "List order books",
                 "tags": [
-                    "orderbook"
+                    "participant"
                 ]
             }
         },
-        "/api/orderbook/{kode}": {
+        "/api/participant/orderbook/{kode}": {
             "get": {
                 "description": "Returns the book aggregated by price level. Bids are highest price\nfirst; asks are lowest price first.",
                 "operationId": "getOrderBook",
@@ -315,7 +1954,7 @@
                                 }
                             }
                         },
-                        "description": "Missing or wrong X-API-Key"
+                        "description": "Missing or wrong X-Participant-Key"
                     },
                     "404": {
                         "content": {
@@ -330,18 +1969,18 @@
                 },
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "ParticipantKeyAuth": []
                     }
                 ],
                 "summary": "Get one order book",
                 "tags": [
-                    "orderbook"
+                    "participant"
                 ]
             }
         },
-        "/api/orders": {
+        "/api/participant/orders": {
             "post": {
-                "description": "Runs the order through continuous matching and returns the trades it\nproduced. A limit order with leftover quantity rests in the book (open);\na market order with leftover quantity is cancelled and never booked.\nThe order, its trades and the fills against the resting orders it\nconsumed are persisted in a single transaction.",
+                "description": "Runs the order through continuous matching and returns the trades it\nproduced. A limit order with leftover quantity rests in the book (open);\na market order with leftover quantity is cancelled and never booked.\nThe order, its trades and the fills against the resting orders it\nconsumed are persisted in a single transaction.\n\nA sell is rejected if the broker does not hold enough shares once its\nresting sell orders are counted, so a position can never go negative.",
                 "operationId": "submitOrder",
                 "requestBody": {
                     "content": {
@@ -353,8 +1992,8 @@
                                     },
                                     {
                                         "$ref": "#/components/schemas/order.SubmitOrderRequest",
-                                        "summary": "body",
-                                        "description": "Order to submit"
+                                        "description": "Order to submit",
+                                        "summary": "body"
                                     }
                                 ]
                             }
@@ -382,7 +2021,7 @@
                                 }
                             }
                         },
-                        "description": "Unknown emiten/participant, bad side/type, qty \u003c= 0, or price \u003c= 0 for a limit order"
+                        "description": "Unknown emiten/participant, bad side/type, qty \u003c= 0, price \u003c= 0 for a limit order, insufficient shares, or an inactive emiten"
                     },
                     "401": {
                         "content": {
@@ -392,7 +2031,7 @@
                                 }
                             }
                         },
-                        "description": "Missing or wrong X-API-Key"
+                        "description": "Missing or wrong X-Participant-Key"
                     },
                     "500": {
                         "content": {
@@ -407,20 +2046,109 @@
                 },
                 "security": [
                     {
-                        "ApiKeyAuth": []
+                        "ParticipantKeyAuth": []
                     }
                 ],
                 "summary": "Submit a new order",
                 "tags": [
-                    "orders"
+                    "participant"
                 ]
             }
         },
-        "/ws/orderbook/{kode}": {
+        "/api/participant/transactions": {
             "get": {
-                "description": "Upgrades to a WebSocket connection. On connect the server sends a full\nsnapshot — the same shape as GET /api/orderbook/{kode}, tagged with\ntype \"update\" — then a fresh full snapshot every time this emiten's book\nchanges. The stream is outbound-only; orders are never accepted over it.\n\nThis endpoint cannot be exercised from Swagger UI, because it is not plain\nHTTP. Connect with a WebSocket client at ws://localhost:8080/ws/orderbook/BBCA.\nNote it is deliberately not under the /api prefix.",
-                "operationId": "streamOrderBook",
+                "description": "Every fill for the authenticated broker, newest first, seen from its own\nside — so `side` and `counterparty` are relative to the caller.\n\nThe broker is taken from the API key. This endpoint accepts no\n`participant` parameter, so one broker cannot read another's fills.",
+                "operationId": "myTransactions",
                 "parameters": [
+                    {
+                        "description": "Filter by emiten code",
+                        "example": "BBCA",
+                        "in": "query",
+                        "name": "emiten",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-trade_TransactionView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-Participant-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten filter"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    }
+                ],
+                "summary": "Own transaction history",
+                "tags": [
+                    "participant"
+                ]
+            }
+        },
+        "/ws/admin/orderbook/{kode}": {
+            "get": {
+                "description": "Upgrades to a WebSocket connection. On connect the server sends a full\nsnapshot — the same shape as GET /api/participant/orderbook/{kode}, tagged\nwith type \"update\" — then a fresh full snapshot every time this emiten's\nbook changes. The stream is outbound-only; orders are never accepted over it.\n\nThe identical stream is available to admin at /ws/admin/orderbook/{kode};\nonly the credential differs.\n\nNot exercisable from Swagger UI, because it is not plain HTTP and browsers\ncannot set headers on a WS handshake. Connect with a WebSocket client at\nws://localhost:8080/ws/participant/orderbook/BBCA.\nThe same outbound-only book stream as the participant route, reached with\nthe static admin key instead of a broker key. One controller serves both,\nso the payload is identical.",
+                "operationId": "streamOrderBookAdmin",
+                "parameters": [
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     {
                         "description": "Emiten code",
                         "example": "BBCA",
@@ -437,7 +2165,14 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/orderbook.BookSnapshot"
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/orderbook.BookSnapshot"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/orderbook.BookSnapshot"
+                                        }
+                                    ]
                                 }
                             }
                         },
@@ -447,7 +2182,14 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                        }
+                                    ]
                                 }
                             }
                         },
@@ -457,7 +2199,14 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                        }
+                                    ]
                                 }
                             }
                         },
@@ -466,17 +2215,114 @@
                 },
                 "security": [
                     {
+                        "ParticipantKeyAuth": []
+                    },
+                    {
                         "ApiKeyAuth": []
                     }
                 ],
-                "summary": "Stream order book updates (WebSocket)",
+                "summary": "Stream order book updates (WebSocket, admin)",
                 "tags": [
-                    "orderbook"
+                    "participant",
+                    "admin"
+                ]
+            }
+        },
+        "/ws/participant/orderbook/{kode}": {
+            "get": {
+                "description": "Upgrades to a WebSocket connection. On connect the server sends a full\nsnapshot — the same shape as GET /api/participant/orderbook/{kode}, tagged\nwith type \"update\" — then a fresh full snapshot every time this emiten's\nbook changes. The stream is outbound-only; orders are never accepted over it.\n\nThe identical stream is available to admin at /ws/admin/orderbook/{kode};\nonly the credential differs.\n\nNot exercisable from Swagger UI, because it is not plain HTTP and browsers\ncannot set headers on a WS handshake. Connect with a WebSocket client at\nws://localhost:8080/ws/participant/orderbook/BBCA.\nThe same outbound-only book stream as the participant route, reached with\nthe static admin key instead of a broker key. One controller serves both,\nso the payload is identical.",
+                "operationId": "streamOrderBookAdmin",
+                "parameters": [
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/orderbook.BookSnapshot"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/orderbook.BookSnapshot"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "Switching Protocols; thereafter each message is a book snapshot"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Stream order book updates (WebSocket, admin)",
+                "tags": [
+                    "participant",
+                    "admin"
                 ]
             }
         }
     },
-    "openapi": "3.1.0",
     "servers": [
         {
             "description": "Local development",

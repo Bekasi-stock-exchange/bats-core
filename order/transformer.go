@@ -1,6 +1,9 @@
 package order
 
-import "bekasi-automatic-trading-system/market/engine"
+import (
+	"bekasi-automatic-trading-system/engine"
+	"bekasi-automatic-trading-system/market"
+)
 
 // ToSubmitOrderResponse converts a matching result into the response shape.
 func ToSubmitOrderResponse(res Result) SubmitOrderResponse {
@@ -12,6 +15,35 @@ func ToSubmitOrderResponse(res Result) SubmitOrderResponse {
 		},
 		Trades: toTradeViews(res.Trades),
 	}
+}
+
+// ToOrderHistoryViews converts stored orders into the admin history shape.
+//
+// Codes are resolved through market.Directory, which already holds every emiten
+// and participant in memory — so listing order history needs no join. Always
+// non-nil so the field marshals as [] rather than null.
+func ToOrderHistoryViews(records []OrderRecord, dir *market.Directory) []OrderHistoryView {
+	out := make([]OrderHistoryView, 0, len(records))
+	for _, o := range records {
+		view := OrderHistoryView{
+			ID:        o.ID,
+			Seq:       o.Seq,
+			Side:      o.Side,
+			Type:      o.Type,
+			Price:     o.Price,
+			Qty:       o.Qty,
+			Remaining: o.Remaining,
+			Status:    o.Status,
+		}
+		if e, ok := dir.EmitenByID(o.EmitenID); ok {
+			view.Emiten = e.Kode
+		}
+		if p, ok := dir.ParticipantByID(o.ParticipantID); ok {
+			view.Participant = p.Kode
+		}
+		out = append(out, view)
+	}
+	return out
 }
 
 // toTradeViews maps executions to their JSON shape. The result is always non-nil

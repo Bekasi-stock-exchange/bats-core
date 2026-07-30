@@ -47,8 +47,24 @@ type TradeView struct {
 	SellOrderID int64 `json:"sell_order_id" format:"int64" example:"1"`
 }
 
-// SubmitOrderResponse is the body of a successful POST /api/orders.
+// SubmitOrderResponse is the body of a successful order submission.
 type SubmitOrderResponse struct {
 	Order  OrderView   `json:"order"`
 	Trades []TradeView `json:"trades"`
+}
+
+// OrderHistoryView is one order in the admin history.
+type OrderHistoryView struct {
+	ID          int64  `json:"id" format:"int64" example:"31"`
+	Seq         int64  `json:"seq" format:"int64" example:"31"`
+	Emiten      string `json:"emiten" example:"BBCA"`
+	Participant string `json:"participant" example:"YP"`
+	Side        string `json:"side" enums:"buy,sell" example:"buy"`
+	Type        string `json:"type" enums:"limit,market" example:"limit"`
+	// 0 for a market order, which carries no price.
+	Price int64 `json:"price" format:"int64" example:"8000"`
+	Qty   int64 `json:"qty" format:"int64" example:"100"`
+	// Quantity not yet filled.
+	Remaining int64  `json:"remaining" format:"int64" example:"0"`
+	Status    string `json:"status" enums:"open,filled,cancelled" example:"filled"`
 }

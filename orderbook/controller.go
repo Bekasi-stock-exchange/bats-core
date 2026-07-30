@@ -23,15 +23,15 @@ func NewController(svc *Service) *Controller {
 //
 //	@Summary		List order books
 //	@Description	Returns a paginated list of the current order books, ordered by emiten code.
-//	@Tags			orderbook
+//	@Tags			participant
 //	@ID				getOrderBooks
 //	@Produce		json
 //	@Param			page	query		int	false	"Page number, from 1"			default(1)	minimum(1)
 //	@Param			limit	query		int	false	"Items per page, max 100"		default(10)	minimum(1)	maximum(100)
 //	@Success		200		{object}	httpx.Page[orderbook.BookSnapshot]	"A page of order books"
-//	@Failure		401		{object}	httpx.ErrorResponse					"Missing or wrong X-API-Key"
-//	@Security		ApiKeyAuth
-//	@Router			/api/orderbook [get]
+//	@Failure		401		{object}	httpx.ErrorResponse					"Missing or wrong X-Participant-Key"
+//	@Security		ParticipantKeyAuth
+//	@Router			/api/participant/orderbook [get]
 func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 	page, limit := httpx.ParsePagination(r)
 
@@ -45,15 +45,15 @@ func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 //	@Summary		Get one order book
 //	@Description	Returns the book aggregated by price level. Bids are highest price
 //	@Description	first; asks are lowest price first.
-//	@Tags			orderbook
+//	@Tags			participant
 //	@ID				getOrderBook
 //	@Produce		json
 //	@Param			kode	path		string					true	"Emiten code"	example(BBCA)
 //	@Success		200		{object}	orderbook.BookSnapshot	"Current book state"
-//	@Failure		401		{object}	httpx.ErrorResponse		"Missing or wrong X-API-Key"
+//	@Failure		401		{object}	httpx.ErrorResponse		"Missing or wrong X-Participant-Key"
 //	@Failure		404		{object}	httpx.ErrorResponse		"Unknown emiten"
-//	@Security		ApiKeyAuth
-//	@Router			/api/orderbook/{kode} [get]
+//	@Security		ParticipantKeyAuth
+//	@Router			/api/participant/orderbook/{kode} [get]
 func (c *Controller) Get(w http.ResponseWriter, r *http.Request) {
 	kode := r.PathValue("kode")
 

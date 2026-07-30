@@ -49,11 +49,18 @@ type Order struct {
 }
 
 // Trade is a single execution between a buy order and a sell order.
+//
+// The participant ids are carried alongside the order ids because the engine is
+// the only place that holds both sides of a match at once. They drive share
+// holdings, and they are persisted on the trade row so per-broker history is an
+// indexed lookup rather than a join back through orders.
 type Trade struct {
-	EmitenID    int64
-	BuyOrderID  int64
-	SellOrderID int64
-	Price       int64 // execution price = the passive (resting) order's price
-	Qty         int64
-	Seq         int64 // global execution sequence
+	EmitenID          int64
+	BuyOrderID        int64
+	SellOrderID       int64
+	BuyParticipantID  int64
+	SellParticipantID int64
+	Price             int64 // execution price = the passive (resting) order's price
+	Qty               int64
+	Seq               int64 // global execution sequence
 }

@@ -86,13 +86,16 @@ func (e *Engine) Submit(o *Order) []Trade {
 		qty := min64(o.Remaining, passive.Remaining)
 
 		// Execution price is always the passive (resting) order's price.
+		buy, sell := sides(o, passive)
 		trades = append(trades, Trade{
-			EmitenID:    e.book.EmitenID,
-			BuyOrderID:  buyID(o, passive),
-			SellOrderID: sellID(o, passive),
-			Price:       passive.Price,
-			Qty:         qty,
-			Seq:         e.seq.nextTrade(),
+			EmitenID:          e.book.EmitenID,
+			BuyOrderID:        buy.ID,
+			SellOrderID:       sell.ID,
+			BuyParticipantID:  buy.ParticipantID,
+			SellParticipantID: sell.ParticipantID,
+			Price:             passive.Price,
+			Qty:               qty,
+			Seq:               e.seq.nextTrade(),
 		})
 
 		o.Remaining -= qty
@@ -158,18 +161,16 @@ func (e *Engine) crosses(o, passive *Order) bool {
 	return o.Price <= passive.Price
 }
 
-func buyID(o, passive *Order) int64 {
+// sides returns the incoming and passive orders sorted into buy and sell.
+//
+// It replaces the previous buyID/sellID pair: a trade now records each side's
+// participant as well as its order id, and resolving the orders once keeps those
+// two facts from drifting apart.
+func sides(o, passive *Order) (buy, sell *Order) {
 	if o.Side == Buy {
-		return o.ID
+		return o, passive
 	}
-	return passive.ID
-}
-
-func sellID(o, passive *Order) int64 {
-	if o.Side == Sell {
-		return o.ID
-	}
-	return passive.ID
+	return passive, o
 }
 
 func min64(a, b int64) int64 {

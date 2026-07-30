@@ -1,6 +1,6 @@
 package market
 
-import "bekasi-automatic-trading-system/market/engine"
+import "bekasi-automatic-trading-system/engine"
 
 // Level is one aggregated price level: the total remaining quantity resting at a
 // single price.

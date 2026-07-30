@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"bekasi-automatic-trading-system/order"
+	"bekasi-automatic-trading-system/platform/postgres"
 )
 
 // Order persists orders and trades. It satisfies order.Repository.
@@ -62,11 +63,47 @@ func (r *Order) SaveExecution(ctx context.Context, ex order.Execution) error {
 	if err := applyFills(ctx, tx, ex.Fills); err != nil {
 		return err
 	}
+	if err := applyAssetDeltas(ctx, tx, ex.Assets); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("repository: commit execution: %w", err)
 	}
 	return nil
+}
+
+// ListOrders returns one page of order history, newest first.
+func (r *Order) ListOrders(ctx context.Context, f order.OrderFilter, limit, offset int) ([]order.OrderRecord, error) {
+	return postgres.QueryAll(ctx, r.pool, "orders page", `
+		SELECT id, emiten_id, participant_id, side, type, price, qty, remaining, status, seq
+		FROM orders
+		WHERE ($1::bigint IS NULL OR emiten_id = $1)
+		  AND ($2::bigint IS NULL OR participant_id = $2)
+		  AND ($3::text   IS NULL OR status = $3)
+		ORDER BY seq DESC
+		LIMIT $4 OFFSET $5`,
+		func(rows pgx.Rows) (order.OrderRecord, error) {
+			var o order.OrderRecord
+			err := rows.Scan(&o.ID, &o.EmitenID, &o.ParticipantID, &o.Side, &o.Type,
+				&o.Price, &o.Qty, &o.Remaining, &o.Status, &o.Seq)
+			return o, err
+		}, f.EmitenID, f.ParticipantID, f.Status, limit, offset)
+}
+
+// CountOrders totals the same filter, for the pagination envelope.
+func (r *Order) CountOrders(ctx context.Context, f order.OrderFilter) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `
+		SELECT count(*) FROM orders
+		WHERE ($1::bigint IS NULL OR emiten_id = $1)
+		  AND ($2::bigint IS NULL OR participant_id = $2)
+		  AND ($3::text   IS NULL OR status = $3)`,
+		f.EmitenID, f.ParticipantID, f.Status).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("repository: count orders: %w", err)
+	}
+	return n, nil
 }
 
 // MaxSeqs returns the highest seq already used in orders and in trades.

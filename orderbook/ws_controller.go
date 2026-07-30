@@ -31,24 +31,41 @@ func NewWSController(svc *Service) *WSController {
 // synchronized entry path into the engine. Full snapshots each time are
 // sufficient; delta updates are a deliberate non-goal for now.
 //
-//	@Summary		Stream order book updates (WebSocket)
+//	@Summary		Stream order book updates (WebSocket, broker)
 //	@Description	Upgrades to a WebSocket connection. On connect the server sends a full
-//	@Description	snapshot — the same shape as GET /api/orderbook/{kode}, tagged with
-//	@Description	type "update" — then a fresh full snapshot every time this emiten's book
-//	@Description	changes. The stream is outbound-only; orders are never accepted over it.
+//	@Description	snapshot — the same shape as GET /api/participant/orderbook/{kode}, tagged
+//	@Description	with type "update" — then a fresh full snapshot every time this emiten's
+//	@Description	book changes. The stream is outbound-only; orders are never accepted over it.
 //	@Description
-//	@Description	This endpoint cannot be exercised from Swagger UI, because it is not plain
-//	@Description	HTTP. Connect with a WebSocket client at ws://localhost:8080/ws/orderbook/BBCA.
-//	@Description	Note it is deliberately not under the /api prefix.
-//	@Tags			orderbook
-//	@ID				streamOrderBook
+//	@Description	The identical stream is available to admin at /ws/admin/orderbook/{kode};
+//	@Description	only the credential differs.
+//	@Description
+//	@Description	Not exercisable from Swagger UI, because it is not plain HTTP and browsers
+//	@Description	cannot set headers on a WS handshake. Connect with a WebSocket client at
+//	@Description	ws://localhost:8080/ws/participant/orderbook/BBCA.
+//	@Tags			participant
+//	@ID				streamOrderBookParticipant
+//	@Produce		json
+//	@Param			kode	path		string					true	"Emiten code"	example(BBCA)
+//	@Success		101		{object}	orderbook.BookSnapshot	"Switching Protocols; thereafter each message is a book snapshot"
+//	@Failure		401		{object}	httpx.ErrorResponse		"Missing or wrong X-Participant-Key"
+//	@Failure		404		{object}	httpx.ErrorResponse		"Unknown emiten"
+//	@Security		ParticipantKeyAuth
+//	@Router			/ws/participant/orderbook/{kode} [get]
+//
+//	@Summary		Stream order book updates (WebSocket, admin)
+//	@Description	The same outbound-only book stream as the participant route, reached with
+//	@Description	the static admin key instead of a broker key. One controller serves both,
+//	@Description	so the payload is identical.
+//	@Tags			admin
+//	@ID				streamOrderBookAdmin
 //	@Produce		json
 //	@Param			kode	path		string					true	"Emiten code"	example(BBCA)
 //	@Success		101		{object}	orderbook.BookSnapshot	"Switching Protocols; thereafter each message is a book snapshot"
 //	@Failure		401		{object}	httpx.ErrorResponse		"Missing or wrong X-API-Key"
 //	@Failure		404		{object}	httpx.ErrorResponse		"Unknown emiten"
 //	@Security		ApiKeyAuth
-//	@Router			/ws/orderbook/{kode} [get]
+//	@Router			/ws/admin/orderbook/{kode} [get]
 func (c *WSController) Stream(w http.ResponseWriter, r *http.Request) {
 	kode := r.PathValue("kode")
 

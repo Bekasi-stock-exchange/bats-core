@@ -2,11 +2,13 @@ package order
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
+	"bekasi-automatic-trading-system/engine"
 	"bekasi-automatic-trading-system/market"
-	"bekasi-automatic-trading-system/market/engine"
+	"bekasi-automatic-trading-system/platform/httpx"
 )
 
 // ValidationError is a rejected submission: the input is well-formed JSON but
@@ -89,6 +91,14 @@ func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error)
 
 	trades, state, err := s.reg.Submit(o)
 	if err != nil {
+		// A short sell or a suspended instrument is the client's mistake, not a
+		// server fault, so it becomes a 400 rather than a 500.
+		switch {
+		case errors.Is(err, market.ErrInsufficientShares):
+			return Result{}, invalid("insufficient shares to sell %d %s", cmd.Qty, cmd.Emiten)
+		case errors.Is(err, market.ErrEmitenInactive):
+			return Result{}, invalid("emiten is not active: %s", cmd.Emiten)
+		}
 		return Result{}, fmt.Errorf("order: match: %w", err)
 	}
 
@@ -102,6 +112,51 @@ func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error)
 
 	return Result{Order: o, Trades: trades}, nil
 }
+
+// History returns one page of order history, newest first, optionally filtered by
+// emiten, participant, or status.
+//
+// An unknown code in a filter is a client mistake, so it becomes a ValidationError
+// rather than silently returning an empty page.
+func (s *Service) History(ctx context.Context, emitenKode, participantKode, status string, page, limit int) ([]OrderRecord, int, error) {
+	var f OrderFilter
+
+	if emitenKode != "" {
+		e, ok := s.dir.Emiten(emitenKode)
+		if !ok {
+			return nil, 0, invalid("unknown emiten: %s", emitenKode)
+		}
+		f.EmitenID = &e.ID
+	}
+	if participantKode != "" {
+		p, ok := s.dir.Participant(participantKode)
+		if !ok {
+			return nil, 0, invalid("unknown participant: %s", participantKode)
+		}
+		f.ParticipantID = &p.ID
+	}
+	if status != "" {
+		switch engine.Status(status) {
+		case engine.Open, engine.Filled, engine.Cancelled:
+			f.Status = &status
+		default:
+			return nil, 0, invalid("status must be open, filled or cancelled")
+		}
+	}
+
+	total, err := s.repo.CountOrders(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	start, _ := httpx.Slice(page, limit, total)
+
+	records, err := s.repo.ListOrders(ctx, f, limit, start)
+	return records, total, err
+}
+
+// Directory exposes the master-data lookup the transformer needs to turn stored
+// ids back into codes.
+func (s *Service) Directory() *market.Directory { return s.dir }
 
 // resolve validates a command and resolves its codes to master data.
 //
@@ -167,16 +222,55 @@ func buildExecution(o *engine.Order, trades []engine.Trade) Execution {
 
 	for _, t := range trades {
 		ex.Trades = append(ex.Trades, TradeRecord{
-			EmitenID:    t.EmitenID,
-			BuyOrderID:  t.BuyOrderID,
-			SellOrderID: t.SellOrderID,
-			Price:       t.Price,
-			Qty:         t.Qty,
-			Seq:         t.Seq,
+			EmitenID:          t.EmitenID,
+			BuyOrderID:        t.BuyOrderID,
+			SellOrderID:       t.SellOrderID,
+			BuyParticipantID:  t.BuyParticipantID,
+			SellParticipantID: t.SellParticipantID,
+			Price:             t.Price,
+			Qty:               t.Qty,
+			Seq:               t.Seq,
 		})
 	}
 	ex.Fills = passiveFills(o, trades)
+	ex.Assets = assetDeltas(trades)
 	return ex
+}
+
+// assetDeltas nets the share movements of a matching pass, one entry per broker
+// and emiten: buyers gain, sellers lose.
+//
+// Netting matters. A broker that matches its own resting order, or sweeps several
+// of its own price levels, appears more than once in a single batch — and two rows
+// with the same conflict target in one upsert make Postgres fail with "cannot
+// affect row a second time". Summing here also lets a self-trade collapse to no
+// change at all, which is what actually happened.
+//
+// Sorted so concurrent transactions lock rows in a consistent order, the same
+// reasoning as passiveFills.
+func assetDeltas(trades []engine.Trade) []AssetDelta {
+	type key struct{ participantID, emitenID int64 }
+
+	netted := make(map[key]int64, len(trades)*2)
+	for _, t := range trades {
+		netted[key{t.BuyParticipantID, t.EmitenID}] += t.Qty
+		netted[key{t.SellParticipantID, t.EmitenID}] -= t.Qty
+	}
+
+	out := make([]AssetDelta, 0, len(netted))
+	for k, delta := range netted {
+		if delta == 0 {
+			continue // a self-trade nets out; no row needs touching
+		}
+		out = append(out, AssetDelta{ParticipantID: k.participantID, EmitenID: k.emitenID, Delta: delta})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ParticipantID != out[j].ParticipantID {
+			return out[i].ParticipantID < out[j].ParticipantID
+		}
+		return out[i].EmitenID < out[j].EmitenID
+	})
+	return out
 }
 
 // passiveFills totals, per resting order, the quantity it traded away in this

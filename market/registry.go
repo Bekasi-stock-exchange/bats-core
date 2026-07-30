@@ -5,20 +5,35 @@
 // It exists so that neither domain has to import the other. The order domain
 // submits through the Registry and publishes to the Hub; the orderbook domain
 // reads snapshots from the Registry and subscribes to the Hub. Both depend on
-// market; market depends only on engine.
+// market, and market depends on nothing above it.
+//
+// The matching rules live one level up, in package engine, rather than under
+// market. That placement is honest about the dependency graph: engine.Order and
+// engine.Trade are domain types the order package speaks directly, so engine is
+// a shared kernel in its own right, not a private detail of market. What market
+// adds on top is everything engine deliberately omits — the lock that serializes
+// matching, the master-data directory, and the book-state fan-out.
 package market
 
 import (
 	"errors"
 	"sync"
 
-	"bekasi-automatic-trading-system/market/engine"
+	"bekasi-automatic-trading-system/engine"
 )
 
 // ErrUnknownEmiten is returned when no engine exists for an emiten id. Callers
 // resolve emiten codes through Directory first, so this indicates an internal
 // inconsistency rather than bad input.
 var ErrUnknownEmiten = errors.New("market: unknown emiten id")
+
+// ErrInsufficientShares rejects a sell the broker cannot cover once its resting
+// sell orders are taken into account. It is client error, not a server fault.
+var ErrInsufficientShares = errors.New("market: insufficient shares")
+
+// ErrEmitenInactive rejects an order for a suspended instrument. The book stays
+// readable; only new orders are refused.
+var ErrEmitenInactive = errors.New("market: emiten is not active")
 
 // Registry owns every order book and the lock that serializes access to them.
 //
@@ -34,31 +49,74 @@ var ErrUnknownEmiten = errors.New("market: unknown emiten id")
 type Registry struct {
 	mu    sync.Mutex
 	books map[int64]*book
+	seq   *engine.Sequencer
+	pos   *positions
 }
 
-// book pairs an engine with its emiten code, so a snapshot can be labelled
-// without a second lookup through Directory.
+// book pairs an engine with its emiten code and trading status, so a snapshot can
+// be labelled and an order gated without a second lookup through Directory.
 type book struct {
 	kode   string
+	active bool
 	engine *engine.Engine
 }
 
 // NewRegistry builds one engine per emiten, all drawing sequence numbers from
 // seq so order and trade Seq stay globally unique and monotonic across emiten.
-func NewRegistry(emitens []Emiten, seq *engine.Sequencer) *Registry {
+//
+// holdings seeds the share ledger from broker_assets_list. Reservations
+// deliberately start empty: the books are not reconstructed on restart, so no
+// resting sell order exists to release a reservation against, and seeding them
+// from rows still marked open would strand them permanently.
+func NewRegistry(emitens []Emiten, holdings []Holding, seq *engine.Sequencer) *Registry {
 	books := make(map[int64]*book, len(emitens))
 	for _, e := range emitens {
-		books[e.ID] = &book{kode: e.Kode, engine: engine.NewEngineWithSequencer(e.ID, seq)}
+		books[e.ID] = newBook(e, seq)
 	}
-	return &Registry{books: books}
+
+	pos := newPositions()
+	for _, h := range holdings {
+		pos.addHeld(h.ParticipantID, h.EmitenID, h.AmountShared)
+	}
+	return &Registry{books: books, seq: seq, pos: pos}
+}
+
+func newBook(e Emiten, seq *engine.Sequencer) *book {
+	return &book{
+		kode:   e.Kode,
+		active: e.IsActive,
+		engine: engine.NewEngineWithSequencer(e.ID, seq),
+	}
+}
+
+// AddBook registers a newly created emiten with an empty order book, which is the
+// correct state for a just-listed instrument. It shares the same sequencer, so
+// sequence numbers stay globally unique.
+func (r *Registry) AddBook(e Emiten) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.books[e.ID]; exists {
+		return
+	}
+	r.books[e.ID] = newBook(e, r.seq)
+}
+
+// Holding reports a broker's current holding of one emiten.
+func (r *Registry) Holding(participantID, emitenID int64) int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.pos.Held(participantID, emitenID)
 }
 
 // Submit runs an order through its emiten's matching engine and returns the
 // resulting trades together with the book state immediately afterwards.
 //
-// Matching and snapshotting happen under a single lock acquisition, so the
-// returned state is exactly the book that produced those trades. The engine
-// mutates o in place: Seq, Remaining and Status are set on return.
+// Everything happens under a single lock acquisition — the availability check,
+// matching, the share bookkeeping, and the snapshot. That is what makes the
+// check trustworthy: there is no window in which another goroutine could spend
+// the same shares, and the returned state is exactly the book that produced
+// those trades. The engine mutates o in place: Seq, Remaining and Status are set
+// on return.
 func (r *Registry) Submit(o *engine.Order) ([]engine.Trade, BookState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -67,8 +125,45 @@ func (r *Registry) Submit(o *engine.Order) ([]engine.Trade, BookState, error) {
 	if !ok {
 		return nil, BookState{}, ErrUnknownEmiten
 	}
+	if !b.active {
+		return nil, BookState{}, ErrEmitenInactive
+	}
+
+	// A sell must be covered by shares that are not already promised to this
+	// broker's resting sell orders. Checked before matching, because matching
+	// cannot be undone.
+	if o.Side == engine.Sell {
+		if o.Qty > r.pos.available(o.ParticipantID, o.EmitenID) {
+			return nil, BookState{}, ErrInsufficientShares
+		}
+	}
+
 	trades := b.engine.Submit(o)
+	r.applyTrades(o, trades)
+
+	// A sell order that rests keeps its remainder committed until it fills.
+	if o.Side == engine.Sell && o.Status == engine.Open && o.Remaining > 0 {
+		r.pos.addReserved(o.ParticipantID, o.EmitenID, o.Remaining)
+	}
+
 	return trades, b.state(), nil
+}
+
+// applyTrades moves shares between the two sides of every execution. Caller must
+// hold r.mu.
+//
+// When the sell side was the resting order, its reservation is released by the
+// same quantity: the shares have now actually left, so they must not be counted
+// as committed as well as gone.
+func (r *Registry) applyTrades(incoming *engine.Order, trades []engine.Trade) {
+	for _, t := range trades {
+		r.pos.addHeld(t.BuyParticipantID, t.EmitenID, t.Qty)
+		r.pos.addHeld(t.SellParticipantID, t.EmitenID, -t.Qty)
+
+		if t.SellOrderID != incoming.ID {
+			r.pos.addReserved(t.SellParticipantID, t.EmitenID, -t.Qty)
+		}
+	}
 }
 
 // Snapshot returns the current book state for one emiten.
