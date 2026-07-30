@@ -324,6 +324,27 @@
                 },
                 "type": "object"
             },
+            "httpx.Page-wallet_WalletView": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/wallet.WalletView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
             "order.OrderHistoryView": {
                 "properties": {
                     "emiten": {
@@ -803,6 +824,26 @@
                     }
                 },
                 "type": "object"
+            },
+            "wallet.WalletView": {
+                "properties": {
+                    "balance": {
+                        "description": "Cash balance held by this broker.",
+                        "example": 5000000000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "participant": {
+                        "example": "YP",
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "description": "When this balance last changed.",
+                        "example": "2026-07-30T09:15:02Z",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
             }
         },
         "securitySchemes": {
@@ -976,16 +1017,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/emiten.CreateRequest",
-                                        "description": "Instrument to list",
-                                        "summary": "body"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/emiten.CreateRequest"
                             }
                         }
                     },
@@ -1192,16 +1224,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/participant.CreateRequest",
-                                        "description": "Broker to create",
-                                        "summary": "body"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/participant.CreateRequest"
                             }
                         }
                     },
@@ -1269,16 +1292,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/participant.KeyRequest",
-                                        "description": "Target broker",
-                                        "summary": "body"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/participant.KeyRequest"
                             }
                         }
                     },
@@ -1327,16 +1341,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/participant.KeyRequest",
-                                        "description": "Target broker",
-                                        "summary": "body"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/participant.KeyRequest"
                             }
                         }
                     },
@@ -1568,6 +1573,85 @@
                     }
                 ],
                 "summary": "Transaction history for any broker",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/wallets": {
+            "get": {
+                "description": "Every broker's cash balance, or one broker's when `participant` is given.",
+                "operationId": "listWallets",
+                "parameters": [
+                    {
+                        "description": "Filter by broker code",
+                        "example": "YP",
+                        "in": "query",
+                        "name": "participant",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-wallet_WalletView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown participant"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Cash balances across brokers",
                 "tags": [
                     "admin"
                 ]
@@ -1986,16 +2070,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/order.SubmitOrderRequest",
-                                        "description": "Order to submit",
-                                        "summary": "body"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/order.SubmitOrderRequest"
                             }
                         }
                     },
@@ -2129,6 +2204,43 @@
                     }
                 ],
                 "summary": "Own transaction history",
+                "tags": [
+                    "participant"
+                ]
+            }
+        },
+        "/api/participant/wallet": {
+            "get": {
+                "description": "The authenticated broker's current cash balance.\n\nThe broker is taken from the API key and this endpoint accepts no\n`participant` parameter, so one broker cannot read another's balance.",
+                "operationId": "myWallet",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/wallet.WalletView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-Participant-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    }
+                ],
+                "summary": "Own cash balance",
                 "tags": [
                     "participant"
                 ]

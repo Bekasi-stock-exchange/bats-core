@@ -1,6 +1,10 @@
 package order
 
-import "context"
+import (
+	"context"
+
+	"bekasi-automatic-trading-system/market"
+)
 
 // OrderRecord is the persisted shape of an order (history/audit). The matching
 // source of truth is the in-memory book, not this table.
@@ -89,6 +93,10 @@ type Repository interface {
 	// trades (0 when a table is empty). Used at startup to seed the engine's
 	// sequencer so newly assigned values never collide with persisted ones.
 	MaxSeqs(ctx context.Context) (maxOrderSeq, maxTradeSeq int64, err error)
+
+	// LoadOpenOrders returns every order still open, sorted by Seq ascending, to
+	// rebuild the in-memory book and its reservations at startup.
+	LoadOpenOrders(ctx context.Context) ([]market.OpenOrder, error)
 
 	// ListOrders returns one page of order history, newest first.
 	ListOrders(ctx context.Context, f OrderFilter, limit, offset int) ([]OrderRecord, error)

@@ -1,0 +1,11 @@
+components: {}
+externalDocs:
+  description: ""
+  url: ""
+info:
+  title: ""
+  version: ""
+openapi: 3.0.3
+paths: {}
+security:
+- on each handler. Only the securitySchemes block needs repairing,: []

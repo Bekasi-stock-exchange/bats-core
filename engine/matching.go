@@ -128,6 +128,28 @@ func (e *Engine) Submit(o *Order) []Trade {
 	return trades
 }
 
+// Restore re-inserts an order that was already resting in the book before a
+// restart, without running it through matching.
+//
+// It exists because the book is pure in-memory state: on restart it starts
+// empty, while the database still has every order that was left "open" when
+// the process stopped. Those orders never got the chance to cross each other
+// again — they were already resting together without crossing, or matching
+// would have consumed them — so re-submitting them through Submit would be
+// wrong twice over: it would re-execute trades that already happened, and it
+// would assign them fresh Seq values, destroying the time priority that a
+// stored Seq already records.
+//
+// The caller is responsible for restoring orders across all engines in Seq
+// order, so ties within a single price level land in their original sequence.
+func (e *Engine) Restore(o *Order) {
+	if o.Side == Buy {
+		e.book.insertBid(o)
+	} else {
+		e.book.insertAsk(o)
+	}
+}
+
 // EstimateCost returns the worst-case notional a buy order could spend, and
 // whether that estimate is known.
 //

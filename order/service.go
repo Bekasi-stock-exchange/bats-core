@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 
 	"bekasi-automatic-trading-system/engine"
 	"bekasi-automatic-trading-system/market"
@@ -47,6 +48,19 @@ type Service struct {
 	reg  *market.Registry
 	hub  *market.Hub
 	repo Repository
+
+	// submitMu serializes the id-reserve -> match -> persist sequence across every
+	// emiten. Registry.Submit already serializes matching by itself, but its lock
+	// is released before the database transaction runs — without a lock spanning
+	// both, two concurrent submissions can match in-memory in one order (correct,
+	// under Registry's own lock) and then race each other to commit, landing in
+	// the database in the opposite order. When one of the two trades references
+	// the other's not-yet-committed order as its resting side, that surfaces as a
+	// foreign-key violation or a transient negative-balance constraint failure —
+	// not a business rule the client broke, but the persisted order of events
+	// disagreeing with the order matching actually produced them in. Holding this
+	// for the whole reserve-match-persist sequence keeps both orders identical.
+	submitMu sync.Mutex
 }
 
 // NewService wires the write side against the market kernel and the repository.
@@ -68,11 +82,21 @@ func NewService(dir *market.Directory, reg *market.Registry, hub *market.Hub, re
 // a failed transaction leaves an executed-but-unpersisted trade. That window is
 // unavoidable without a write-ahead record, and it is narrower than persisting
 // mid-match; the book is already not reconstructed from the database on restart.
+//
+// submitMu holds for the entire reserve-match-persist sequence, across every
+// emiten — not just the match. Registry.Submit serializes matching on its own,
+// but releases its lock before this function's database transaction runs; two
+// concurrent calls could then match in one order but commit in the other,
+// producing a trade that foreign-keys to an order not yet committed. See the
+// field comment on submitMu for the full reasoning.
 func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error) {
 	em, part, side, typ, price, err := s.resolve(cmd)
 	if err != nil {
 		return Result{}, err
 	}
+
+	s.submitMu.Lock()
+	defer s.submitMu.Unlock()
 
 	id, err := s.repo.NextOrderID(ctx)
 	if err != nil {
@@ -89,7 +113,19 @@ func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error)
 		Qty:           cmd.Qty,
 	}
 
-	trades, state, err := s.reg.Submit(o)
+	// persist runs inside Registry.Submit's lock, after matching but before any
+	// of its effects reach the share/cash ledger — see the field comment on
+	// submitMu and the doc comment on Registry.Submit for why the ordering
+	// matters. o already carries its final Seq/Remaining/Status at this point,
+	// because the engine sets them before returning control here.
+	persist := func(trades []engine.Trade) error {
+		if err := s.repo.SaveExecution(ctx, buildExecution(o, trades)); err != nil {
+			return fmt.Errorf("order: save execution: %w", err)
+		}
+		return nil
+	}
+
+	trades, state, err := s.reg.Submit(o, persist)
 	if err != nil {
 		// A short sell or a suspended instrument is the client's mistake, not a
 		// server fault, so it becomes a 400 rather than a 500.
@@ -101,11 +137,9 @@ func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error)
 		case errors.Is(err, market.ErrEmitenInactive):
 			return Result{}, invalid("emiten is not active: %s", cmd.Emiten)
 		}
-		return Result{}, fmt.Errorf("order: match: %w", err)
-	}
-
-	if err := s.repo.SaveExecution(ctx, buildExecution(o, trades)); err != nil {
-		return Result{}, fmt.Errorf("order: save execution: %w", err)
+		// persist's own error is already wrapped with "order: save execution:",
+		// so it is returned as-is rather than wrapped again as a match failure.
+		return Result{}, err
 	}
 
 	if len(trades) > 0 || o.Status == engine.Open {

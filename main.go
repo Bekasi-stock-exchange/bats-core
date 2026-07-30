@@ -219,8 +219,12 @@ type kernel struct {
 //
 // The sequencer is seeded from the highest sequence numbers already persisted, so
 // order and trade Seq continue past them and stay globally unique across restarts.
-// Holdings seed the share ledger, which is what lets the registry reject a broker
-// selling more than it owns.
+// Holdings and wallets seed the share and cash ledgers, which is what lets the
+// registry reject a broker selling or buying more than it has. Orders still open
+// at the last shutdown are then replayed into the book, so their reservations
+// are re-committed against those ledgers too — without this, a restart would
+// forget what every resting order still promises away, and a broker could
+// oversell or overbuy past it until a database constraint caught the drift.
 func newKernel(ctx context.Context, repos repositories) (*kernel, error) {
 	emitens, err := repos.master.LoadEmiten(ctx)
 	if err != nil {
@@ -242,11 +246,18 @@ func newKernel(ctx context.Context, repos repositories) (*kernel, error) {
 	if err != nil {
 		return nil, err
 	}
+	openOrders, err := repos.order.LoadOpenOrders(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	seq := engine.NewSequencer(maxOrderSeq, maxTradeSeq)
+	reg := market.NewRegistry(emitens, holdings, wallets, seq)
+	reg.RestoreOpenOrders(openOrders)
+
 	return &kernel{
 		dir: market.NewDirectory(emitens, participants),
-		reg: market.NewRegistry(emitens, holdings, wallets, seq),
+		reg: reg,
 		hub: market.NewHub(),
 	}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"bekasi-automatic-trading-system/market"
 	"bekasi-automatic-trading-system/order"
 	"bekasi-automatic-trading-system/platform/postgres"
 )
@@ -118,6 +119,22 @@ func (r *Order) MaxSeqs(ctx context.Context) (maxOrderSeq, maxTradeSeq int64, er
 		return 0, 0, fmt.Errorf("repository: max trade seq: %w", err)
 	}
 	return maxOrderSeq, maxTradeSeq, nil
+}
+
+// LoadOpenOrders returns every order still open, sorted by Seq ascending, to
+// rebuild the in-memory book and its reservations at startup.
+func (r *Order) LoadOpenOrders(ctx context.Context) ([]market.OpenOrder, error) {
+	return postgres.QueryAll(ctx, r.pool, "open orders", `
+		SELECT id, emiten_id, participant_id, side, type, price, qty, remaining, seq
+		FROM orders
+		WHERE status = 'open'
+		ORDER BY seq`,
+		func(rows pgx.Rows) (market.OpenOrder, error) {
+			var o market.OpenOrder
+			err := rows.Scan(&o.ID, &o.EmitenID, &o.ParticipantID, &o.Side, &o.Type,
+				&o.Price, &o.Qty, &o.Remaining, &o.Seq)
+			return o, err
+		})
 }
 
 // insertOrder writes the order row at its final post-matching state, with the id

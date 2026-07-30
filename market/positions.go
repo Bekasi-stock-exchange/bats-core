@@ -108,3 +108,17 @@ type Wallet struct {
 	ParticipantID int64
 	Balance       int64
 }
+
+// OpenOrder is an order still resting in the book when the process last
+// stopped, used to rebuild the in-memory book and its reservations at startup.
+type OpenOrder struct {
+	ID            int64
+	EmitenID      int64
+	ParticipantID int64
+	Side          string
+	Type          string
+	Price         int64
+	Qty           int64
+	Remaining     int64
+	Seq           int64
+}

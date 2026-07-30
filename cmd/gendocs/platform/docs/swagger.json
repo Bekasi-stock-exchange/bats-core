@@ -1,0 +1,18 @@
+{
+    "components": {},
+    "info": {
+        "title": "",
+        "version": ""
+    },
+    "externalDocs": {
+        "description": "",
+        "url": ""
+    },
+    "paths": {},
+    "openapi": "3.0.3",
+    "security": [
+        {
+            "on each handler. Only the securitySchemes block needs repairing,": []
+        }
+    ]
+}

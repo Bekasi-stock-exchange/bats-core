@@ -67,6 +67,11 @@ func (c *Controller) Submit(w http.ResponseWriter, r *http.Request) {
 		Qty:         req.Qty,
 	})
 	if err != nil {
+		var invalid ValidationError
+		if !errors.As(err, &invalid) {
+			slog.ErrorContext(r.Context(), "order submit failed", "error", err,
+				"participant", req.Participant, "emiten", req.Emiten)
+		}
 		writeSubmitError(w, err)
 		return
 	}

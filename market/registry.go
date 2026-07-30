@@ -69,10 +69,9 @@ type book struct {
 // seq so order and trade Seq stay globally unique and monotonic across emiten.
 //
 // holdings seeds the share ledger from broker_assets_list and wallets seeds the
-// cash ledger from broker_wallet. Reservations deliberately start empty: the
-// books are not reconstructed on restart, so no resting order exists to release
-// a reservation against, and seeding them from rows still marked open would
-// strand them permanently.
+// cash ledger from broker_wallet. Orders still open when the process last
+// stopped are not restored here — call RestoreOpenOrders once the registry is
+// built, so their reservations land on top of these opening balances.
 func NewRegistry(emitens []Emiten, holdings []Holding, wallets []Wallet, seq *engine.Sequencer) *Registry {
 	books := make(map[int64]*book, len(emitens))
 	for _, e := range emitens {
@@ -87,6 +86,64 @@ func NewRegistry(emitens []Emiten, holdings []Holding, wallets []Wallet, seq *en
 		pos.addCash(w.ParticipantID, w.Balance)
 	}
 	return &Registry{books: books, seq: seq, pos: pos}
+}
+
+// RestoreOpenOrders repopulates every book from orders that were still open
+// when the process last stopped, and re-commits the reservations they hold
+// against the share and cash ledgers.
+//
+// Without this, the in-memory book starts empty on every restart while the
+// database still records those orders as open. The ledgers would then treat
+// their shares and cash as fully available, letting a broker oversell or
+// overbuy past what is actually still promised to a resting order — a
+// mismatch that surfaces later as a database constraint violation when the
+// stale reservation and a new trade collide, rather than as the clean 400 the
+// availability check is supposed to produce.
+//
+// orders must be sorted by Seq ascending: that is the order they were
+// originally inserted in, and inserting them in any other order would still
+// produce a correctly *sorted* book (insertBid/insertAsk sort on every call),
+// but ties in the Sequencer's next value would no longer match what a fresh
+// process would have assigned, since it continues from the highest persisted
+// Seq.
+//
+// Takes the lock itself: called once at startup, before the registry serves
+// any request, or standalone by a caller that is not already holding it.
+// Rebuild calls the unlocked half directly because it already holds the lock.
+func (r *Registry) RestoreOpenOrders(orders []OpenOrder) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.restoreOpenOrdersLocked(orders)
+}
+
+// restoreOpenOrdersLocked is RestoreOpenOrders' body. Caller must hold r.mu.
+func (r *Registry) restoreOpenOrdersLocked(orders []OpenOrder) {
+	for _, o := range orders {
+		b, ok := r.books[o.EmitenID]
+		if !ok {
+			continue // emiten no longer exists; nothing to restore into
+		}
+
+		eo := &engine.Order{
+			ID:            o.ID,
+			EmitenID:      o.EmitenID,
+			ParticipantID: o.ParticipantID,
+			Side:          engine.Side(o.Side),
+			Type:          engine.Type(o.Type),
+			Price:         o.Price,
+			Qty:           o.Qty,
+			Remaining:     o.Remaining,
+			Status:        engine.Open,
+			Seq:           o.Seq,
+		}
+		b.engine.Restore(eo)
+
+		if eo.Side == engine.Sell {
+			r.pos.addReserved(o.ParticipantID, o.EmitenID, o.Remaining)
+		} else {
+			r.pos.addCashReserved(o.ParticipantID, o.Remaining*o.Price)
+		}
+	}
 }
 
 func newBook(e Emiten, seq *engine.Sequencer) *book {
@@ -116,16 +173,28 @@ func (r *Registry) Holding(participantID, emitenID int64) int64 {
 	return r.pos.Held(participantID, emitenID)
 }
 
-// Submit runs an order through its emiten's matching engine and returns the
-// resulting trades together with the book state immediately afterwards.
+// Submit runs an order through its emiten's matching engine, then invokes
+// persist with the resulting trades before applying any of them to the share
+// and cash ledgers.
 //
 // Everything happens under a single lock acquisition — the availability check,
-// matching, the share bookkeeping, and the snapshot. That is what makes the
-// check trustworthy: there is no window in which another goroutine could spend
-// the same shares, and the returned state is exactly the book that produced
-// those trades. The engine mutates o in place: Seq, Remaining and Status are set
-// on return.
-func (r *Registry) Submit(o *engine.Order) ([]engine.Trade, BookState, error) {
+// matching, the persist callback, the ledger bookkeeping, and the snapshot.
+// That is what makes the check trustworthy: there is no window in which
+// another goroutine could spend the same shares, and the returned state is
+// exactly the book that produced those trades. The engine mutates o in place:
+// Seq, Remaining and Status are set on return.
+//
+// The ledger (held/reserved shares, cash/cashReserved balances) is deliberately
+// applied only after persist returns success. Matching itself cannot be
+// undone once run — the engine has already popped consumed resting orders and
+// possibly inserted o into the book — but that is a queue-ordering fact, not
+// money or shares, and staying wrong about it until the next successful
+// submission or restart is a far cheaper mistake than a ledger entry that
+// silently disagrees with the database. If persist fails, the ledger is
+// untouched and will not drift: the only cost is that Submit's caller sees an
+// error for an order the book already reflects, which SaveExecution's own
+// transaction guarantees never happened at the database's expense.
+func (r *Registry) Submit(o *engine.Order, persist func([]engine.Trade) error) ([]engine.Trade, BookState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -157,6 +226,11 @@ func (r *Registry) Submit(o *engine.Order) ([]engine.Trade, BookState, error) {
 	}
 
 	trades := b.engine.Submit(o)
+
+	if err := persist(trades); err != nil {
+		return nil, BookState{}, err
+	}
+
 	r.applyTrades(o, trades)
 
 	// A sell order that rests keeps its remainder committed until it fills.

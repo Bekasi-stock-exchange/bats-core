@@ -30,7 +30,7 @@ tidy:
 
 # Install the swag CLI. Only needed to regenerate the spec, never to build.
 docs-tool:
-	go install github.com/swaggo/swag/v2/cmd/swag@$(SWAG_VERSION)
+	go install github.com/swaggo/swag/v2/cmd/swag@v2.0.0-rc5
 
 # Regenerate platform/docs/swagger.{yaml,json} from the code annotations.
 # Commit the result: the Dockerfile build embeds it and must not need swag.
