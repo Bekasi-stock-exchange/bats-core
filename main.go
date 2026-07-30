@@ -35,7 +35,7 @@ func runServer() error {
 	}
 	defer st.Close()
 
-	srv, err := api.NewServer(ctx, st)
+	srv, err := api.NewServer(ctx, st, cfg.APIKey, cfg.DisableDocs)
 	if err != nil {
 		return err
 	}

@@ -110,6 +110,21 @@ go run .                  # listens on :8080
 The migration runner and the server both locate `.env` and `migrations/` by searching
 upward from the working directory, so they work from any subdirectory.
 
+### Using Docker
+
+You can easily spin up the entire application—including the PostgreSQL database, automatic migrations, and the API server—using Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The Docker setup is configured so that the **database** and **app** start automatically.
+
+To run the database migrations manually using Docker, run this command:
+```bash
+docker compose run --rm migrate
+```
+
 ## API
 
 Interactive documentation: **http://localhost:8080/docs** (Swagger UI).

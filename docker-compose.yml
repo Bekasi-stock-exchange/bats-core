@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jast
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d jast"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build: .
+    command: ["/app/migrate"]
+    profiles:
+      - migrate
+    env_file:
+      - .env
+    environment:
+      # Override DB_DSN from .env so it connects to the 'db' container instead of localhost
+      - DB_DSN=postgres://postgres:postgres@db:5432/jast?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      # Override DB_DSN from .env so it connects to the 'db' container instead of localhost
+      - DB_DSN=postgres://postgres:postgres@db:5432/jast?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

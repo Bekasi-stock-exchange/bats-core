@@ -30,11 +30,14 @@ type Server struct {
 	partByKode   map[string]store.Participant
 
 	hub *hub
+
+	disableDocs bool
+	apiKey      string
 }
 
 // NewServer loads master data and wires an HTTP server. It fails if master data
 // cannot be read.
-func NewServer(ctx context.Context, st *store.Store) (*Server, error) {
+func NewServer(ctx context.Context, st *store.Store, apiKey string, disableDocs bool) (*Server, error) {
 	emitens, err := st.LoadEmiten(ctx)
 	if err != nil {
 		return nil, err
@@ -58,6 +61,8 @@ func NewServer(ctx context.Context, st *store.Store) (*Server, error) {
 		emitenByKode: make(map[string]store.Emiten),
 		partByKode:   make(map[string]store.Participant),
 		hub:          newHub(),
+		disableDocs:  disableDocs,
+		apiKey:       apiKey,
 	}
 	for _, e := range emitens {
 		s.emitenByKode[e.Kode] = e
@@ -72,14 +77,32 @@ func NewServer(ctx context.Context, st *store.Store) (*Server, error) {
 // Handler builds the route table. Go 1.22+ method-based patterns; stdlib only.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /orders", s.handleSubmitOrder)
-	mux.HandleFunc("GET /orderbook/{kode}", s.handleOrderBook)
-	mux.HandleFunc("GET /ws/orderbook/{kode}", s.handleWS)
+	mux.HandleFunc("POST /orders", s.requireAPIKey(s.handleSubmitOrder))
+	mux.HandleFunc("GET /orderbook", s.requireAPIKey(s.handleOrderBooks))
+	mux.HandleFunc("GET /orderbook/{kode}", s.requireAPIKey(s.handleOrderBook))
+	mux.HandleFunc("GET /ws/orderbook/{kode}", s.requireAPIKey(s.handleWS))
 
-	// API documentation (Swagger UI + the OpenAPI spec it renders).
-	mux.HandleFunc("GET /docs", s.handleDocs)
-	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
+	if !s.disableDocs {
+		// API documentation (Swagger UI + the OpenAPI spec it renders).
+		mux.HandleFunc("GET /docs", s.handleDocs)
+		mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
+	}
 	return mux
+}
+
+func (s *Server) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("X-API-Key")
+		// Browsers might not send custom headers in WS requests natively.
+		// For WS, if it's via a browser, they'd use a query param or a subprotocol,
+		// but since this API specifies "Not exercisable from Swagger UI" and it's
+		// meant for clients, checking headers is fine.
+		if key != s.apiKey {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // engineFor returns the engine for an emiten id. Caller must hold s.mu.

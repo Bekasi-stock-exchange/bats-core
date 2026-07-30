@@ -11,11 +11,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config holds resolved runtime configuration. Plain fields, no viper.
 type Config struct {
-	DBDSN    string
-	HTTPPort int
-	LogLevel string
+	DBDSN       string
+	APIKey      string
+	HTTPPort    int
+	LogLevel    string
+	DisableDocs bool
 }
 
 // Load reads configuration from the environment (prefix JAST_). It optionally
@@ -28,6 +29,7 @@ func Load() (Config, error) {
 
 	v.SetDefault("HTTP_PORT", 8080)
 	v.SetDefault("LOG_LEVEL", "info")
+	v.SetDefault("DISABLE_DOCS", true)
 
 	// Best-effort local .env; absence is not an error. The file lives at the
 	// repo root, so search upward from the working directory to find it. This
@@ -44,10 +46,17 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: DB_DSN is required (set it in the environment or .env)")
 	}
 
+	apiKey := v.GetString("API_KEY")
+	if apiKey == "" {
+		return Config{}, fmt.Errorf("config: API_KEY is required (set it in the environment or .env)")
+	}
+
 	return Config{
-		DBDSN:    dsn,
-		HTTPPort: v.GetInt("HTTP_PORT"),
-		LogLevel: v.GetString("LOG_LEVEL"),
+		DBDSN:       dsn,
+		APIKey:      apiKey,
+		HTTPPort:    v.GetInt("HTTP_PORT"),
+		LogLevel:    v.GetString("LOG_LEVEL"),
+		DisableDocs: v.GetBool("DISABLE_DOCS"),
 	}, nil
 }
 
