@@ -1,0 +1,486 @@
+{
+    "components": {
+        "schemas": {
+            "httpx.ErrorResponse": {
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpx.Page-orderbook_BookSnapshot": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/orderbook.BookSnapshot"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "order.OrderView": {
+                "properties": {
+                    "id": {
+                        "description": "Database id of the order.",
+                        "example": 3,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "remaining": {
+                        "description": "Quantity not yet filled.",
+                        "example": 0,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "status": {
+                        "description": "Lifecycle state after matching.",
+                        "enum": [
+                            "open",
+                            "filled",
+                            "cancelled"
+                        ],
+                        "example": "filled",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "order.SubmitOrderRequest": {
+                "properties": {
+                    "emiten": {
+                        "description": "Emiten (listed instrument) code.",
+                        "example": "BBCA",
+                        "type": "string"
+                    },
+                    "participant": {
+                        "description": "Participant (broker) code.",
+                        "example": "YP",
+                        "type": "string"
+                    },
+                    "price": {
+                        "description": "Whole rupiah, never a float. Required and \u003e 0 for a limit order; ignored\nand stored as 0 for a market order.",
+                        "example": 8000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "qty": {
+                        "description": "Quantity to trade. Must be \u003e 0.",
+                        "example": 100,
+                        "format": "int64",
+                        "minimum": 1,
+                        "type": "integer"
+                    },
+                    "side": {
+                        "description": "Order direction.",
+                        "enum": [
+                            "buy",
+                            "sell"
+                        ],
+                        "example": "buy",
+                        "type": "string"
+                    },
+                    "type": {
+                        "description": "Order type. A market order never rests in the book.",
+                        "enum": [
+                            "limit",
+                            "market"
+                        ],
+                        "example": "limit",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "emiten",
+                    "participant",
+                    "qty",
+                    "side",
+                    "type"
+                ],
+                "type": "object"
+            },
+            "order.SubmitOrderResponse": {
+                "properties": {
+                    "order": {
+                        "$ref": "#/components/schemas/order.OrderView"
+                    },
+                    "trades": {
+                        "items": {
+                            "$ref": "#/components/schemas/order.TradeView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
+            "order.TradeView": {
+                "properties": {
+                    "buy_order_id": {
+                        "description": "Id of the buy side of this execution.",
+                        "example": 3,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "price": {
+                        "description": "Execution price, which is always the passive (resting) order's price.",
+                        "example": 8000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "qty": {
+                        "description": "Quantity executed.",
+                        "example": 100,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "sell_order_id": {
+                        "description": "Id of the sell side of this execution.",
+                        "example": 1,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "orderbook.BookSnapshot": {
+                "properties": {
+                    "asks": {
+                        "description": "Sell side, lowest price first.",
+                        "items": {
+                            "$ref": "#/components/schemas/orderbook.PriceLevel"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "bids": {
+                        "description": "Buy side, highest price first.",
+                        "items": {
+                            "$ref": "#/components/schemas/orderbook.PriceLevel"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "emiten": {
+                        "description": "Emiten code this book belongs to.",
+                        "example": "BBCA",
+                        "type": "string"
+                    },
+                    "type": {
+                        "description": "Present as \"update\" on WebSocket pushes; omitted on REST responses.",
+                        "example": "update",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "orderbook.PriceLevel": {
+                "properties": {
+                    "price": {
+                        "example": 8050,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "qty": {
+                        "example": 30,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            }
+        },
+        "securitySchemes": {
+            "ApiKeyAuth": {
+                "description": "Shared API key. Every route except the documentation requires it.",
+                "in": "header",
+                "name": "X-API-Key",
+                "type": "apiKey"
+            }
+        }
+    },
+    "info": {
+        "description": "REST surface for the JAST core matching engine (JATS-style continuous\nmatching for Bursa Efek Indonesia). The engine knows only brokers\n(participants), not individual investors, and stops at trade execution.\n\nOrders enter only through POST /api/orders. The order book can be polled\nvia GET /api/orderbook/{kode} or streamed over WebSocket at\nGET /ws/orderbook/{kode} (documented, but not exercisable from Swagger UI).",
+        "title": "JAST Core API",
+        "version": "1.0.0"
+    },
+    "externalDocs": {
+        "description": "",
+        "url": ""
+    },
+    "paths": {
+        "/api/orderbook": {
+            "get": {
+                "description": "Returns a paginated list of the current order books, ordered by emiten code.",
+                "operationId": "getOrderBooks",
+                "parameters": [
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Items per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "maximum": 100,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-orderbook_BookSnapshot"
+                                }
+                            }
+                        },
+                        "description": "A page of order books"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "List order books",
+                "tags": [
+                    "orderbook"
+                ]
+            }
+        },
+        "/api/orderbook/{kode}": {
+            "get": {
+                "description": "Returns the book aggregated by price level. Bids are highest price\nfirst; asks are lowest price first.",
+                "operationId": "getOrderBook",
+                "parameters": [
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/orderbook.BookSnapshot"
+                                }
+                            }
+                        },
+                        "description": "Current book state"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Get one order book",
+                "tags": [
+                    "orderbook"
+                ]
+            }
+        },
+        "/api/orders": {
+            "post": {
+                "description": "Runs the order through continuous matching and returns the trades it\nproduced. A limit order with leftover quantity rests in the book (open);\na market order with leftover quantity is cancelled and never booked.\nThe order, its trades and the fills against the resting orders it\nconsumed are persisted in a single transaction.",
+                "operationId": "submitOrder",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/order.SubmitOrderRequest",
+                                        "summary": "body",
+                                        "description": "Order to submit"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Order to submit",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/order.SubmitOrderResponse"
+                                }
+                            }
+                        },
+                        "description": "Order processed: the resulting order state and any trades"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten/participant, bad side/type, qty \u003c= 0, or price \u003c= 0 for a limit order"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Persistence failure"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Submit a new order",
+                "tags": [
+                    "orders"
+                ]
+            }
+        },
+        "/ws/orderbook/{kode}": {
+            "get": {
+                "description": "Upgrades to a WebSocket connection. On connect the server sends a full\nsnapshot — the same shape as GET /api/orderbook/{kode}, tagged with\ntype \"update\" — then a fresh full snapshot every time this emiten's book\nchanges. The stream is outbound-only; orders are never accepted over it.\n\nThis endpoint cannot be exercised from Swagger UI, because it is not plain\nHTTP. Connect with a WebSocket client at ws://localhost:8080/ws/orderbook/BBCA.\nNote it is deliberately not under the /api prefix.",
+                "operationId": "streamOrderBook",
+                "parameters": [
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/orderbook.BookSnapshot"
+                                }
+                            }
+                        },
+                        "description": "Switching Protocols; thereafter each message is a book snapshot"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Stream order book updates (WebSocket)",
+                "tags": [
+                    "orderbook"
+                ]
+            }
+        }
+    },
+    "openapi": "3.1.0",
+    "servers": [
+        {
+            "description": "Local development",
+            "url": "http://localhost:8080"
+        }
+    ]
+}

@@ -1,5 +1,5 @@
 // Command migrate applies every .sql file in migrations/ in filename order
-// against JAST_DB_DSN. It is a plain runner (no versioning table) intended for
+// against DB_DSN. It is a plain runner (no versioning table) intended for
 // local setup:
 //
 //	go run ./cmd/migrate
@@ -21,7 +21,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"bekasi-automatic-trading-system/config"
+	"bekasi-automatic-trading-system/platform/config"
 )
 
 func main() {
