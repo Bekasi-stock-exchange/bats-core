@@ -47,17 +47,27 @@ type AssetDelta struct {
 	Delta         int64
 }
 
+// WalletDelta is a change to one broker's cash balance: negative when it bought
+// (cash paid out), positive when it sold (cash received).
+type WalletDelta struct {
+	ParticipantID int64
+	Delta         int64
+}
+
 // Execution is everything a single matching pass produced: the incoming order at
 // its final state, the trades it generated, the fills to apply to the resting
-// orders it consumed, and the share movements between the brokers involved.
+// orders it consumed, and the share and cash movements between the brokers
+// involved.
 //
 // It is saved as one unit so the database can never hold a partial outcome — in
-// particular, holdings can never disagree with the trades that moved them.
+// particular, holdings and balances can never disagree with the trades that
+// moved them.
 type Execution struct {
-	Order  OrderRecord
-	Trades []TradeRecord
-	Fills  []Fill
-	Assets []AssetDelta
+	Order   OrderRecord
+	Trades  []TradeRecord
+	Fills   []Fill
+	Assets  []AssetDelta
+	Wallets []WalletDelta
 }
 
 // Repository persists orders and trades.

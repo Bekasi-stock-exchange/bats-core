@@ -31,6 +31,10 @@ var ErrUnknownEmiten = errors.New("market: unknown emiten id")
 // sell orders are taken into account. It is client error, not a server fault.
 var ErrInsufficientShares = errors.New("market: insufficient shares")
 
+// ErrInsufficientBalance rejects a buy the broker cannot cover once its resting
+// buy orders are taken into account. It is client error, not a server fault.
+var ErrInsufficientBalance = errors.New("market: insufficient balance")
+
 // ErrEmitenInactive rejects an order for a suspended instrument. The book stays
 // readable; only new orders are refused.
 var ErrEmitenInactive = errors.New("market: emiten is not active")
@@ -64,11 +68,12 @@ type book struct {
 // NewRegistry builds one engine per emiten, all drawing sequence numbers from
 // seq so order and trade Seq stay globally unique and monotonic across emiten.
 //
-// holdings seeds the share ledger from broker_assets_list. Reservations
-// deliberately start empty: the books are not reconstructed on restart, so no
-// resting sell order exists to release a reservation against, and seeding them
-// from rows still marked open would strand them permanently.
-func NewRegistry(emitens []Emiten, holdings []Holding, seq *engine.Sequencer) *Registry {
+// holdings seeds the share ledger from broker_assets_list and wallets seeds the
+// cash ledger from broker_wallet. Reservations deliberately start empty: the
+// books are not reconstructed on restart, so no resting order exists to release
+// a reservation against, and seeding them from rows still marked open would
+// strand them permanently.
+func NewRegistry(emitens []Emiten, holdings []Holding, wallets []Wallet, seq *engine.Sequencer) *Registry {
 	books := make(map[int64]*book, len(emitens))
 	for _, e := range emitens {
 		books[e.ID] = newBook(e, seq)
@@ -77,6 +82,9 @@ func NewRegistry(emitens []Emiten, holdings []Holding, seq *engine.Sequencer) *R
 	pos := newPositions()
 	for _, h := range holdings {
 		pos.addHeld(h.ParticipantID, h.EmitenID, h.AmountShared)
+	}
+	for _, w := range wallets {
+		pos.addCash(w.ParticipantID, w.Balance)
 	}
 	return &Registry{books: books, seq: seq, pos: pos}
 }
@@ -138,12 +146,26 @@ func (r *Registry) Submit(o *engine.Order) ([]engine.Trade, BookState, error) {
 		}
 	}
 
+	// A buy must be covered by cash that is not already promised to this broker's
+	// resting buy orders. A market buy carries no price, so it is checked against
+	// the best opposing price instead — the worst price it could possibly pay.
+	if o.Side == engine.Buy {
+		cost, ok := b.engine.EstimateCost(o)
+		if ok && cost > r.pos.availableCash(o.ParticipantID) {
+			return nil, BookState{}, ErrInsufficientBalance
+		}
+	}
+
 	trades := b.engine.Submit(o)
 	r.applyTrades(o, trades)
 
 	// A sell order that rests keeps its remainder committed until it fills.
 	if o.Side == engine.Sell && o.Status == engine.Open && o.Remaining > 0 {
 		r.pos.addReserved(o.ParticipantID, o.EmitenID, o.Remaining)
+	}
+	// A buy order that rests keeps its remaining cost committed until it fills.
+	if o.Side == engine.Buy && o.Status == engine.Open && o.Remaining > 0 {
+		r.pos.addCashReserved(o.ParticipantID, o.Remaining*o.Price)
 	}
 
 	return trades, b.state(), nil
@@ -160,8 +182,20 @@ func (r *Registry) applyTrades(incoming *engine.Order, trades []engine.Trade) {
 		r.pos.addHeld(t.BuyParticipantID, t.EmitenID, t.Qty)
 		r.pos.addHeld(t.SellParticipantID, t.EmitenID, -t.Qty)
 
+		cost := t.Qty * t.Price
+		r.pos.addCash(t.BuyParticipantID, -cost)
+		r.pos.addCash(t.SellParticipantID, cost)
+
 		if t.SellOrderID != incoming.ID {
 			r.pos.addReserved(t.SellParticipantID, t.EmitenID, -t.Qty)
+		}
+		if t.BuyOrderID != incoming.ID {
+			// The resting buy order's reservation was sized at its own limit price,
+			// which may differ from the price it actually traded at (price-time
+			// priority fills against the resting order's price, but a later,
+			// better-priced match is still possible in principle) — releasing the
+			// same notional it reserved keeps the ledger exactly balanced.
+			r.pos.addCashReserved(t.BuyParticipantID, -cost)
 		}
 	}
 }

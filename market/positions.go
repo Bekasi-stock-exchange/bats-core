@@ -11,12 +11,17 @@ package market
 type positions struct {
 	held     map[int64]map[int64]int64 // participant -> emiten -> shares owned
 	reserved map[int64]map[int64]int64 // participant -> emiten -> shares committed to resting sells
+
+	cash         map[int64]int64 // participant -> cash balance owned
+	cashReserved map[int64]int64 // participant -> cash committed to resting buy orders
 }
 
 func newPositions() *positions {
 	return &positions{
-		held:     make(map[int64]map[int64]int64),
-		reserved: make(map[int64]map[int64]int64),
+		held:         make(map[int64]map[int64]int64),
+		reserved:     make(map[int64]map[int64]int64),
+		cash:         make(map[int64]int64),
+		cashReserved: make(map[int64]int64),
 	}
 }
 
@@ -39,6 +44,25 @@ func (p *positions) addReserved(participantID, emitenID, delta int64) {
 	add(p.reserved, participantID, emitenID, delta)
 }
 
+// availableCash is what a broker may still spend: its balance, minus what its
+// resting buy orders have already promised away.
+func (p *positions) availableCash(participantID int64) int64 {
+	return p.cash[participantID] - p.cashReserved[participantID]
+}
+
+// Cash returns a broker's current cash balance.
+func (p *positions) Cash(participantID int64) int64 {
+	return p.cash[participantID]
+}
+
+func (p *positions) addCash(participantID, delta int64) {
+	add1(p.cash, participantID, delta)
+}
+
+func (p *positions) addCashReserved(participantID, delta int64) {
+	add1(p.cashReserved, participantID, delta)
+}
+
 // add applies a delta, creating the inner map on demand and dropping entries that
 // fall back to zero so the maps do not grow without bound.
 func add(m map[int64]map[int64]int64, outer, inner, delta int64) {
@@ -59,9 +83,28 @@ func add(m map[int64]map[int64]int64, outer, inner, delta int64) {
 	}
 }
 
+// add1 applies a delta to a single-level map, dropping entries that fall back
+// to zero so the map does not grow without bound. Balances are allowed to
+// settle at exactly zero without needing a positive floor like shares do.
+func add1(m map[int64]int64, key, delta int64) {
+	if delta == 0 {
+		return
+	}
+	m[key] += delta
+	if m[key] == 0 {
+		delete(m, key)
+	}
+}
+
 // Holding is one broker's stake in one emiten, used to seed the ledger at startup.
 type Holding struct {
 	ParticipantID int64
 	EmitenID      int64
 	AmountShared  int64
+}
+
+// Wallet is one broker's cash balance, used to seed the ledger at startup.
+type Wallet struct {
+	ParticipantID int64
+	Balance       int64
 }

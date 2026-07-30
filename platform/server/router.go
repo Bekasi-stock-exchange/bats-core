@@ -13,6 +13,7 @@ import (
 	"bekasi-automatic-trading-system/platform/docs"
 	"bekasi-automatic-trading-system/platform/httpx"
 	"bekasi-automatic-trading-system/trade"
+	"bekasi-automatic-trading-system/wallet"
 )
 
 // Deps is everything the route table needs, assembled by the composition root.
@@ -29,6 +30,7 @@ type Deps struct {
 	Participant *participant.Controller
 	Emiten      *emiten.Controller
 	Assets      *assets.Controller
+	Wallet      *wallet.Controller
 	Trade       *trade.Controller
 	Docs        *docs.Controller
 }
@@ -54,6 +56,7 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/participant/orderbook", broker(d.OrderBook.List))
 	mux.HandleFunc("GET /api/participant/orderbook/{kode}", broker(d.OrderBook.Get))
 	mux.HandleFunc("GET /api/participant/assets", broker(d.Assets.Mine))
+	mux.HandleFunc("GET /api/participant/wallet", broker(d.Wallet.Mine))
 	mux.HandleFunc("GET /api/participant/transactions", broker(d.Trade.MyTransactions))
 	mux.HandleFunc("GET /api/participant/emiten/{kode}", broker(d.Emiten.Detail))
 	mux.HandleFunc("GET /api/participant/emiten/{kode}/prices", broker(d.Trade.Ticks))
@@ -70,6 +73,7 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/admin/trades", admin(d.Trade.ListTrades))
 	mux.HandleFunc("GET /api/admin/transactions", admin(d.Trade.AdminTransactions))
 	mux.HandleFunc("GET /api/admin/assets", admin(d.Assets.All))
+	mux.HandleFunc("GET /api/admin/wallets", admin(d.Wallet.All))
 
 	// --- WebSocket: same stream, one door per tier -----------------------
 	// One controller registered twice. The payload is identical; only the

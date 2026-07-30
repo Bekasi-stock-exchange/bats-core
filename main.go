@@ -64,6 +64,7 @@ import (
 	"bekasi-automatic-trading-system/platform/server"
 	"bekasi-automatic-trading-system/repository"
 	"bekasi-automatic-trading-system/trade"
+	"bekasi-automatic-trading-system/wallet"
 )
 
 // shutdownTimeout bounds the drain of in-flight requests on SIGINT/SIGTERM. Past
@@ -107,6 +108,7 @@ func runServer() error {
 		master:       master,
 		order:        repository.NewOrder(pool),
 		asset:        repository.NewAsset(pool),
+		wallet:       repository.NewWallet(pool),
 		participant:  repository.NewParticipant(pool),
 		trade:        trades,
 		emitenWriter: master,
@@ -125,6 +127,7 @@ func runServer() error {
 	partSvc := participant.NewService(repos.participant, kernel.dir)
 	emitenSvc := emiten.NewService(kernel.dir, kernel.reg, repos.emitenWriter, repos.prices)
 	assetSvc := assets.NewService(kernel.dir, repos.asset)
+	walletSvc := wallet.NewService(kernel.dir, repos.wallet)
 	tradeSvc := trade.NewService(kernel.dir, repos.trade)
 
 	handler := server.Handler(server.Deps{
@@ -141,6 +144,7 @@ func runServer() error {
 		Participant: participant.NewController(partSvc, repository.IsDuplicate),
 		Emiten:      emiten.NewController(emitenSvc, repository.IsDuplicate),
 		Assets:      assets.NewController(assetSvc, assets.NewCodes(kernel.dir)),
+		Wallet:      wallet.NewController(walletSvc, wallet.NewCodes(kernel.dir)),
 		Trade:       trade.NewController(tradeSvc, trade.NewCodes(kernel.dir)),
 		Docs:        docs.NewController(),
 	})
@@ -193,6 +197,7 @@ type repositories struct {
 	master      market.MasterRepository
 	order       order.Repository
 	asset       assets.Repository
+	wallet      wallet.Repository
 	participant participant.Repository
 	trade       trade.Repository
 
@@ -229,6 +234,10 @@ func newKernel(ctx context.Context, repos repositories) (*kernel, error) {
 	if err != nil {
 		return nil, err
 	}
+	wallets, err := repos.wallet.LoadWallets(ctx)
+	if err != nil {
+		return nil, err
+	}
 	maxOrderSeq, maxTradeSeq, err := repos.order.MaxSeqs(ctx)
 	if err != nil {
 		return nil, err
@@ -237,7 +246,7 @@ func newKernel(ctx context.Context, repos repositories) (*kernel, error) {
 	seq := engine.NewSequencer(maxOrderSeq, maxTradeSeq)
 	return &kernel{
 		dir: market.NewDirectory(emitens, participants),
-		reg: market.NewRegistry(emitens, holdings, seq),
+		reg: market.NewRegistry(emitens, holdings, wallets, seq),
 		hub: market.NewHub(),
 	}, nil
 }

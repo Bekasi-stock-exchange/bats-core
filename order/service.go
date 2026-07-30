@@ -96,6 +96,8 @@ func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error)
 		switch {
 		case errors.Is(err, market.ErrInsufficientShares):
 			return Result{}, invalid("insufficient shares to sell %d %s", cmd.Qty, cmd.Emiten)
+		case errors.Is(err, market.ErrInsufficientBalance):
+			return Result{}, invalid("insufficient balance to buy %d %s", cmd.Qty, cmd.Emiten)
 		case errors.Is(err, market.ErrEmitenInactive):
 			return Result{}, invalid("emiten is not active: %s", cmd.Emiten)
 		}
@@ -234,6 +236,7 @@ func buildExecution(o *engine.Order, trades []engine.Trade) Execution {
 	}
 	ex.Fills = passiveFills(o, trades)
 	ex.Assets = assetDeltas(trades)
+	ex.Wallets = walletDeltas(trades)
 	return ex
 }
 
@@ -270,6 +273,31 @@ func assetDeltas(trades []engine.Trade) []AssetDelta {
 		}
 		return out[i].EmitenID < out[j].EmitenID
 	})
+	return out
+}
+
+// walletDeltas nets the cash movements of a matching pass, one entry per
+// broker: buyers pay, sellers receive. Netted for the same reason as
+// assetDeltas — a broker appearing more than once in a batch must collapse to
+// a single row, or the upsert below fails on "cannot affect row a second time".
+//
+// Sorted so concurrent transactions lock rows in a consistent order.
+func walletDeltas(trades []engine.Trade) []WalletDelta {
+	netted := make(map[int64]int64, len(trades)*2)
+	for _, t := range trades {
+		cost := t.Qty * t.Price
+		netted[t.BuyParticipantID] -= cost
+		netted[t.SellParticipantID] += cost
+	}
+
+	out := make([]WalletDelta, 0, len(netted))
+	for participantID, delta := range netted {
+		if delta == 0 {
+			continue // a self-trade nets out; no row needs touching
+		}
+		out = append(out, WalletDelta{ParticipantID: participantID, Delta: delta})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ParticipantID < out[j].ParticipantID })
 	return out
 }
 

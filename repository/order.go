@@ -66,6 +66,9 @@ func (r *Order) SaveExecution(ctx context.Context, ex order.Execution) error {
 	if err := applyAssetDeltas(ctx, tx, ex.Assets); err != nil {
 		return err
 	}
+	if err := applyWalletDeltas(ctx, tx, ex.Wallets); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("repository: commit execution: %w", err)

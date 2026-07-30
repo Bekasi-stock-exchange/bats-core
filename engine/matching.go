@@ -128,6 +128,35 @@ func (e *Engine) Submit(o *Order) []Trade {
 	return trades
 }
 
+// EstimateCost returns the worst-case notional a buy order could spend, and
+// whether that estimate is known.
+//
+// For a limit order it is Qty * Price: execution price is always the passive
+// (resting) order's price, which for a buy can only be at or below its own
+// limit, so the limit price is already the ceiling. For a market order there is
+// no limit price, so the estimate walks the resting asks the same way matching
+// would consume them; if the book cannot fill the whole quantity, the true cost
+// is unknowable in advance and ok is false — a market buy against a thin book is
+// let through and settled for whatever it actually costs, the same way it
+// already risks an unfavourable price with no ceiling at all.
+func (e *Engine) EstimateCost(o *Order) (cost int64, ok bool) {
+	if o.Type == Limit {
+		return o.Qty * o.Price, true
+	}
+
+	remaining := o.Qty
+	for i := 0; remaining > 0 && i < len(e.book.Asks); i++ {
+		ask := e.book.Asks[i]
+		qty := min64(remaining, ask.Remaining)
+		cost += qty * ask.Price
+		remaining -= qty
+	}
+	if remaining > 0 {
+		return 0, false
+	}
+	return cost, true
+}
+
 // oppositeBest returns the best resting order on the side opposite to o.
 func (e *Engine) oppositeBest(o *Order) *Order {
 	if o.Side == Buy {
