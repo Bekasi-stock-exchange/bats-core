@@ -13,6 +13,11 @@ import (
 //
 // IsActive gates matching, not existence. An inactive emiten rejects new orders
 // while its book and history stay readable, so positions do not become invisible.
+//
+// IPOPrice is the offering price the instrument was listed at, and is nil for the
+// instruments that predate the column. It is the reference price until the first
+// trade executes — see ReferencePrice — and is never rewritten afterwards, so the
+// listing price stays auditable.
 type Emiten struct {
 	ID             int64
 	Kode           string
@@ -20,10 +25,29 @@ type Emiten struct {
 	ListedShares   int64
 	UnlistedShares int64
 	IsActive       bool
+	IPOPrice       *int64
 }
 
 // TotalShares is the full share count outstanding.
 func (e Emiten) TotalShares() int64 { return e.ListedShares + e.UnlistedShares }
+
+// ReferencePrice resolves the price to value this instrument at, given its most
+// recent execution price (nil when it has never traded).
+//
+// The market's own price wins whenever one exists; the IPO price only stands in
+// until the first trade. Both may be absent — an instrument listed before the IPO
+// price existed and never traded has no price at all — and nil is returned rather
+// than 0, which would claim it is worth nothing.
+//
+// This lives on the type, not in a query, because both the emiten detail endpoint
+// and the holdings valuation must agree on it: two COALESCEs in two SQL files
+// drift, one method does not.
+func (e Emiten) ReferencePrice(lastTrade *int64) *int64 {
+	if lastTrade != nil {
+		return lastTrade
+	}
+	return e.IPOPrice
+}
 
 // Participant is a broker (exchange participant).
 type Participant struct {

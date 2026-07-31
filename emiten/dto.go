@@ -1,5 +1,15 @@
 package emiten
 
+// Values of the price_source field: which price a valuation was computed from.
+const (
+	// PriceSourceTrade means the instrument has traded and the valuation uses its
+	// most recent execution price.
+	PriceSourceTrade = "trade"
+	// PriceSourceIPO means the instrument has not traded yet and the valuation
+	// falls back to its listing price.
+	PriceSourceIPO = "ipo"
+)
+
 // CreateRequest is the body of POST /api/admin/emiten.
 type CreateRequest struct {
 	// Instrument code, unique across the exchange.
@@ -10,6 +20,9 @@ type CreateRequest struct {
 	ListedShares int64 `json:"listed_shares" format:"int64" example:"18462169893" validate:"required"`
 	// Restricted shares not available for trading. Defaults to 0.
 	UnlistedShares int64 `json:"unlisted_shares" format:"int64" example:"0"`
+	// Offering price. Must be > 0: it is the instrument's reference price until it
+	// first trades, and without it a new listing has no price to quote against.
+	IPOPrice int64 `json:"ipo_price" format:"int64" example:"1000" validate:"required"`
 }
 
 // EmitenView is a listed instrument's master data, as returned by the admin list.
@@ -26,8 +39,14 @@ type EmitenView struct {
 
 // EmitenDetail adds price statistics and derived valuations to the master data.
 //
-// The price fields and value are null — never zero — for an instrument that has
+// The trade-derived price fields are null — never zero — for an instrument that has
 // never traded, because no price exists yet rather than the price being nothing.
+//
+// current_price and reference_price are not the same field. current_price is
+// strictly what the market last paid; reference_price is what the instrument is
+// valued at, and falls back to ipo_price while the market has not spoken yet.
+// price_source names which of the two backs the valuation, so a client never has to
+// guess whether market cap reflects real trading.
 type EmitenDetail struct {
 	Kode string `json:"kode" example:"BBCA"`
 	Nama string `json:"nama" example:"Bank Central Asia Tbk"`
@@ -39,6 +58,15 @@ type EmitenDetail struct {
 	HighestPrice *int64 `json:"highest_price,omitempty" format:"int64" example:"8200"`
 	// Lowest price ever executed. Null if never traded.
 	LowestPrice *int64 `json:"lowest_price,omitempty" format:"int64" example:"7800"`
+	// Offering price this instrument was listed at. Null for instruments listed
+	// before the field existed.
+	IPOPrice *int64 `json:"ipo_price,omitempty" format:"int64" example:"1000"`
+	// Price backing the valuation: the last trade, or ipo_price until the
+	// instrument first trades. Null only if it has neither.
+	ReferencePrice *int64 `json:"reference_price,omitempty" format:"int64" example:"8050"`
+	// Where reference_price came from: "trade" or "ipo". Omitted when there is no
+	// reference price at all.
+	PriceSource string `json:"price_source,omitempty" enums:"trade,ipo" example:"trade"`
 
 	ListedShares   int64 `json:"listed_shares" format:"int64" example:"123275050000"`
 	UnlistedShares int64 `json:"unlisted_shares" format:"int64" example:"1000000000"`
@@ -50,6 +78,7 @@ type EmitenDetail struct {
 	// Share of total shares that is restricted. Null when there are no shares.
 	UnlistedPercentage *float64 `json:"unlisted_percentage,omitempty" example:"0.8"`
 
-	// Market capitalisation: current price × total shares. Null if never traded.
+	// Market capitalisation: reference price × total shares. Null only when the
+	// instrument has neither a trade nor an IPO price.
 	Value *int64 `json:"value,omitempty" format:"int64" example:"1000414152500000"`
 }

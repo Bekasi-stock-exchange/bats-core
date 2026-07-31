@@ -29,9 +29,14 @@ func ToEmitenViews(emitens []market.Emiten) []EmitenView {
 
 // ToEmitenDetail combines master data with price statistics.
 //
-// Market value is derived here rather than stored: it depends on the last traded
+// Market value is derived here rather than stored: it depends on the reference
 // price, so one trade would otherwise invalidate the stored value of every holder
 // of that instrument.
+//
+// The trade statistics are passed through untouched — current/highest/lowest stay
+// strictly trade-derived, and stay null for an instrument that has never traded.
+// Only the valuation falls back to the IPO price, which is why the fallback happens
+// here and not in the query behind PriceStats.
 func ToEmitenDetail(e market.Emiten, stats PriceStats) EmitenDetail {
 	total := e.TotalShares()
 
@@ -42,9 +47,19 @@ func ToEmitenDetail(e market.Emiten, stats PriceStats) EmitenDetail {
 		CurrentPrice:   stats.Current,
 		HighestPrice:   stats.Highest,
 		LowestPrice:    stats.Lowest,
+		IPOPrice:       e.IPOPrice,
 		ListedShares:   e.ListedShares,
 		UnlistedShares: e.UnlistedShares,
 		TotalShares:    total,
+	}
+
+	ref := e.ReferencePrice(stats.Current)
+	detail.ReferencePrice = ref
+	switch {
+	case stats.Current != nil:
+		detail.PriceSource = PriceSourceTrade
+	case ref != nil:
+		detail.PriceSource = PriceSourceIPO
 	}
 
 	// No shares means no meaningful split; report null rather than dividing by
@@ -58,8 +73,8 @@ func ToEmitenDetail(e market.Emiten, stats PriceStats) EmitenDetail {
 
 	// price × shares for a large issuer is around 10^15, comfortably inside
 	// int64's 9.2×10^18.
-	if stats.Current != nil {
-		value := *stats.Current * total
+	if ref != nil {
+		value := *ref * total
 		detail.Value = &value
 	}
 	return detail

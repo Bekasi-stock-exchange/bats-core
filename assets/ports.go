@@ -12,14 +12,18 @@ import (
 // Record is one broker's holding of one emiten, as stored.
 //
 // LastPrice is the emiten's most recent execution price, or nil when it has never
-// traded. It is carried rather than a computed value so the nil case stays visible
-// all the way to the transformer, instead of collapsing into a misleading zero.
+// traded; IPOPrice is the price it was listed at, or nil for the instruments that
+// predate that column. Both are carried rather than a single pre-resolved price so
+// the nil cases stay visible all the way to the transformer, instead of collapsing
+// into a misleading zero — and so the transformer, not the query, decides which one
+// values the holding (market.Emiten.ReferencePrice).
 type Record struct {
 	ParticipantID int64
 	EmitenID      int64
 	AmountShared  int64
 	UpdatedAt     time.Time
 	LastPrice     *int64
+	IPOPrice      *int64
 }
 
 // Repository reads broker holdings.

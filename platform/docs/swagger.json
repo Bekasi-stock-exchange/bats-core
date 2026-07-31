@@ -23,13 +23,28 @@
                         "example": "YP",
                         "type": "string"
                     },
+                    "price_source": {
+                        "description": "Where reference_price came from: \"trade\" or \"ipo\". Omitted when there is no\nreference price at all.",
+                        "enum": [
+                            "trade",
+                            "ipo"
+                        ],
+                        "example": "trade",
+                        "type": "string"
+                    },
+                    "reference_price": {
+                        "description": "Price backing the valuation: the last trade, or the IPO price until the\ninstrument first trades. Null only if it has neither.",
+                        "example": 8050,
+                        "format": "int64",
+                        "type": "integer"
+                    },
                     "updated_at": {
                         "description": "When this holding last changed.",
                         "example": "2026-07-30T09:15:02Z",
                         "type": "string"
                     },
                     "value": {
-                        "description": "Market value: last_price × amount_shared. Derived on read, so it always\nreflects the latest trade even when this broker did not trade. Null if the\ninstrument has never traded.",
+                        "description": "Market value: reference_price × amount_shared. Derived on read, so it always\nreflects the latest trade even when this broker did not trade. Null only when\nthe instrument has neither a trade nor an IPO price.",
                         "example": 8050000000,
                         "format": "int64",
                         "type": "integer"
@@ -39,6 +54,12 @@
             },
             "emiten.CreateRequest": {
                 "properties": {
+                    "ipo_price": {
+                        "description": "Offering price. Must be \u003e 0: it is the instrument's reference price until it\nfirst trades, and without it a new listing has no price to quote against.",
+                        "example": 1000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
                     "kode": {
                         "description": "Instrument code, unique across the exchange.",
                         "example": "BBNI",
@@ -63,6 +84,7 @@
                     }
                 },
                 "required": [
+                    "ipo_price",
                     "kode",
                     "listed_shares",
                     "nama"
@@ -85,6 +107,12 @@
                     "highest_price": {
                         "description": "Highest price ever executed. Null if never traded.",
                         "example": 8200,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "ipo_price": {
+                        "description": "Offering price this instrument was listed at. Null for instruments listed\nbefore the field existed.",
+                        "example": 1000,
                         "format": "int64",
                         "type": "integer"
                     },
@@ -112,6 +140,21 @@
                         "example": "Bank Central Asia Tbk",
                         "type": "string"
                     },
+                    "price_source": {
+                        "description": "Where reference_price came from: \"trade\" or \"ipo\". Omitted when there is no\nreference price at all.",
+                        "enum": [
+                            "trade",
+                            "ipo"
+                        ],
+                        "example": "trade",
+                        "type": "string"
+                    },
+                    "reference_price": {
+                        "description": "Price backing the valuation: the last trade, or ipo_price until the\ninstrument first trades. Null only if it has neither.",
+                        "example": 8050,
+                        "format": "int64",
+                        "type": "integer"
+                    },
                     "total_shares": {
                         "example": 124275050000,
                         "format": "int64",
@@ -128,7 +171,7 @@
                         "type": "integer"
                     },
                     "value": {
-                        "description": "Market capitalisation: current price × total shares. Null if never traded.",
+                        "description": "Market capitalisation: reference price × total shares. Null only when the\ninstrument has neither a trade nor an IPO price.",
                         "example": 1000414152500000,
                         "format": "int64",
                         "type": "integer"
@@ -203,6 +246,27 @@
                     "data": {
                         "items": {
                             "$ref": "#/components/schemas/emiten.EmitenView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpx.Page-index_SnapshotView": {
+                "properties": {
+                    "data": {
+                        "items": {
+                            "$ref": "#/components/schemas/index.SnapshotView"
                         },
                         "type": "array",
                         "uniqueItems": false
@@ -340,6 +404,133 @@
                         "type": "integer"
                     },
                     "total": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "index.IndexView": {
+                "properties": {
+                    "captured_at": {
+                        "example": "2026-07-30T09:15:02Z",
+                        "type": "string"
+                    },
+                    "divisor": {
+                        "description": "The divisor in force. It is restated whenever an instrument lists, so the\nlevel does not jump on an event that moved no price.",
+                        "example": 1000000000000,
+                        "type": "number"
+                    },
+                    "kode": {
+                        "example": "IHSG",
+                        "type": "string"
+                    },
+                    "market_cap": {
+                        "description": "Summed free-float market capitalisation of every priced instrument, in\nrupiah.",
+                        "example": 1247830000000000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "members": {
+                        "description": "How many instruments were priced into this level.",
+                        "example": 5,
+                        "type": "integer"
+                    },
+                    "nama": {
+                        "example": "Indeks Harga Saham Gabungan",
+                        "type": "string"
+                    },
+                    "total": {
+                        "description": "How many instruments are listed in total. members below this means some\ninstrument has no price at all and was excluded rather than counted as zero.",
+                        "example": 5,
+                        "type": "integer"
+                    },
+                    "value": {
+                        "description": "The index level, rounded to two decimals.",
+                        "example": 1247.83,
+                        "type": "number"
+                    }
+                },
+                "type": "object"
+            },
+            "index.SnapshotView": {
+                "properties": {
+                    "captured_at": {
+                        "example": "2026-07-30T09:15:02Z",
+                        "type": "string"
+                    },
+                    "divisor": {
+                        "example": 1000000000000,
+                        "type": "number"
+                    },
+                    "market_cap": {
+                        "example": 1247830000000000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "members": {
+                        "example": 5,
+                        "type": "integer"
+                    },
+                    "value": {
+                        "example": 1247.83,
+                        "type": "number"
+                    }
+                },
+                "type": "object"
+            },
+            "marketconfig.ConfigView": {
+                "properties": {
+                    "emiten_halt_bps": {
+                        "description": "How far one emiten's price may move from its reference price before\ntrading in it is halted, in basis points. 3000 is 30%.",
+                        "example": 3000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "halt_duration_seconds": {
+                        "description": "How long a triggered halt lasts, in seconds.",
+                        "example": 120,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "index_halt_bps": {
+                        "description": "How far the index may fall from its opening value before trading halts\nmarket-wide, in basis points. 1200 is 12%.",
+                        "example": 1200,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "min_price": {
+                        "description": "The lowest price a limit order may be submitted at, in rupiah. An order\npriced below it is rejected with 400 and never reaches the order book.",
+                        "example": 50,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "marketconfig.UpdateRequest": {
+                "properties": {
+                    "emiten_halt_bps": {
+                        "description": "New single-emiten halt threshold in basis points, must be in 1..10000.\nOmit to leave it unchanged.",
+                        "example": 3000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "halt_duration_seconds": {
+                        "description": "New halt duration in seconds, must be in 1..86400. Omit to leave it\nunchanged.",
+                        "example": 120,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "index_halt_bps": {
+                        "description": "New market-wide halt threshold in basis points, must be in 1..10000. Omit\nto leave it unchanged.",
+                        "example": 1200,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "min_price": {
+                        "description": "New price floor in rupiah, must be \u003e 0. Omit to leave it unchanged.",
+                        "example": 50,
+                        "format": "int64",
                         "type": "integer"
                     }
                 },
@@ -825,6 +1016,232 @@
                 },
                 "type": "object"
             },
+            "underwriter.AllocationView": {
+                "properties": {
+                    "jenis": {
+                        "description": "Role in this offering: \"utama\" or \"pendukung\".",
+                        "enum": [
+                            "utama",
+                            "pendukung"
+                        ],
+                        "example": "utama",
+                        "type": "string"
+                    },
+                    "nama": {
+                        "example": "Danareksa Sekuritas",
+                        "type": "string"
+                    },
+                    "participant": {
+                        "description": "Broker code the shares were credited to.",
+                        "example": "YP",
+                        "type": "string"
+                    },
+                    "percentage": {
+                        "description": "Share of listed_shares this tranche represents, to two decimals.",
+                        "example": 62.5,
+                        "type": "number"
+                    },
+                    "shares": {
+                        "description": "Shares allocated.",
+                        "example": 25000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "underwriter": {
+                        "example": "UW01",
+                        "type": "string"
+                    },
+                    "value": {
+                        "description": "Proceeds for this tranche: shares × ipo_price.",
+                        "example": 25000000,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "underwriter.CreateRequest": {
+                "properties": {
+                    "jenis": {
+                        "description": "Role: \"utama\" (lead) or \"pendukung\" (supporting).",
+                        "enum": [
+                            "utama",
+                            "pendukung"
+                        ],
+                        "example": "utama",
+                        "type": "string"
+                    },
+                    "kode": {
+                        "description": "Underwriter code, unique across the exchange.",
+                        "example": "UW03",
+                        "type": "string"
+                    },
+                    "nama": {
+                        "description": "Firm name.",
+                        "example": "BNI Sekuritas",
+                        "type": "string"
+                    },
+                    "participant": {
+                        "description": "Broker code this underwriter trades through. Allocated shares land in this\nparticipant's holdings, because only a participant can trade them.",
+                        "example": "YP",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "jenis",
+                    "kode",
+                    "nama",
+                    "participant"
+                ],
+                "type": "object"
+            },
+            "underwriter.IPORequest": {
+                "properties": {
+                    "ipo_price": {
+                        "description": "Offering price per share. Must be \u003e 0; becomes the instrument's reference\nprice until it first trades.",
+                        "example": 1000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "kode": {
+                        "description": "Instrument code, unique across the exchange.",
+                        "example": "SSIA",
+                        "type": "string"
+                    },
+                    "listed_shares": {
+                        "description": "Publicly tradeable shares. The allocations must sum to exactly this.",
+                        "example": 40000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "nama": {
+                        "description": "Company name.",
+                        "example": "PT Surya Cipta Semesta Tbk",
+                        "type": "string"
+                    },
+                    "underwriters": {
+                        "description": "The syndicate. At least one entry, exactly one of which must be \"utama\",\nand the lead's tranche must be the largest.",
+                        "items": {
+                            "$ref": "#/components/schemas/underwriter.UnderwriterAllocation"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "unlisted_shares": {
+                        "description": "Restricted shares not available for trading. Defaults to 0.",
+                        "example": 10000,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "ipo_price",
+                    "kode",
+                    "listed_shares",
+                    "nama",
+                    "underwriters"
+                ],
+                "type": "object"
+            },
+            "underwriter.IPOResponse": {
+                "properties": {
+                    "ipo_price": {
+                        "description": "Offering price per share.",
+                        "example": 1000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "kode": {
+                        "example": "SSIA",
+                        "type": "string"
+                    },
+                    "listed_shares": {
+                        "example": 40000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "nama": {
+                        "example": "PT Surya Cipta Semesta Tbk",
+                        "type": "string"
+                    },
+                    "total_shares": {
+                        "example": 50000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "total_value": {
+                        "description": "Total raised: listed_shares × ipo_price.",
+                        "example": 40000000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "underwriters": {
+                        "description": "The syndicate, lead first.",
+                        "items": {
+                            "$ref": "#/components/schemas/underwriter.AllocationView"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "unlisted_shares": {
+                        "example": 10000,
+                        "format": "int64",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "underwriter.UnderwriterAllocation": {
+                "properties": {
+                    "shares": {
+                        "description": "Shares allocated. Must be \u003e 0.",
+                        "example": 25000,
+                        "format": "int64",
+                        "type": "integer"
+                    },
+                    "underwriter": {
+                        "description": "Underwriter code taking this tranche.",
+                        "example": "UW01",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "shares",
+                    "underwriter"
+                ],
+                "type": "object"
+            },
+            "underwriter.UnderwriterView": {
+                "properties": {
+                    "is_active": {
+                        "example": true,
+                        "type": "boolean"
+                    },
+                    "jenis": {
+                        "description": "Role: \"utama\" (lead) or \"pendukung\" (supporting).",
+                        "enum": [
+                            "utama",
+                            "pendukung"
+                        ],
+                        "example": "utama",
+                        "type": "string"
+                    },
+                    "kode": {
+                        "example": "UW01",
+                        "type": "string"
+                    },
+                    "nama": {
+                        "example": "Danareksa Sekuritas",
+                        "type": "string"
+                    },
+                    "participant": {
+                        "description": "Broker code this underwriter trades through.",
+                        "example": "YP",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
             "wallet.WalletView": {
                 "properties": {
                     "balance": {
@@ -951,6 +1368,99 @@
                 ]
             }
         },
+        "/api/admin/config": {
+            "get": {
+                "description": "The exchange-wide rules in force right now, as the order path is\nactually enforcing them.\n\n**min_price** is the lowest price a limit order may carry, in rupiah.\nIt defaults to **50**, matching BEI's own minimum quotable price. Without\nit the only price rule is `price \u003e 0`, which lets a seller quote 58, then\n5, then 1 — each one accepted, and each one resting in the book as the\nbest ask for whatever arrives next.\n\nThe remaining fields configure the circuit breakers. **emiten_halt_bps**\n(default **3000** = 30%) is how far one emiten may move from its reference\nprice before trading in it halts; **index_halt_bps** (default **1200** =\n12%) is how far the index may fall from its opening value before trading\nhalts market-wide; **halt_duration_seconds** (default **120**) is how long\neither halt lasts.\n\nThresholds are in basis points — 1/100th of a percent, so 3000 is 30% —\nbecause a threshold compared against a rupiah price stays in integer\narithmetic that way, with no rounding at the boundary that decides whether\na breaker trips.",
+                "operationId": "getMarketConfig",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/marketconfig.ConfigView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Read trading parameters",
+                "tags": [
+                    "admin"
+                ]
+            },
+            "put": {
+                "description": "Changes the exchange-wide trading rules. The new value is persisted and\ntakes effect on the very next order — no restart, and it survives one.\n\nFields left out of the body keep their current value, so one parameter can\nbe changed without restating the rest. min_price must be greater than 0: a\nfloor of 0 is not a policy, it is the absence of the rule.\n\nThe halt thresholds must be between 1 and 10000 basis points, and the halt\nduration between 1 and 86400 seconds. Both ends are enforced. A threshold\nof 0 does not disable a breaker, it arms one that trips on the first trade\nof the session; a threshold above 100% can never trip, leaving a breaker\nthat reads as protection and provides none.",
+                "operationId": "updateMarketConfig",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/marketconfig.UpdateRequest"
+                            }
+                        }
+                    },
+                    "description": "Parameters to change",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/marketconfig.ConfigView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "A parameter is outside its permitted range"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Update trading parameters",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
         "/api/admin/emiten": {
             "get": {
                 "description": "Master data for every emiten, ordered by code. Price statistics are\ndeliberately excluded — computing them per row would be a query per\ninstrument. Use the detail endpoint for those.",
@@ -1072,6 +1582,133 @@
                     }
                 ],
                 "summary": "List a new instrument",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/emiten/{kode}": {
+            "get": {
+                "description": "The same instrument detail the participant tier reads, on the admin key —\nso oversight does not require holding a broker's credential. The admin list\nomits price statistics — computing them per row would be a query per\ninstrument — so this endpoint is where they are read.\n\ncurrent_price, highest_price and lowest_price are strictly trade-derived and\nare **null**, not 0, for an instrument that has never traded. reference_price\nis what the instrument is valued at and falls back to ipo_price until the\nfirst trade; price_source names which of the two it came from.\n\nvalue is market capitalisation (reference price × total shares), derived on\nread rather than stored, so it always reflects the latest trade.\nfree_float_percentage is the publicly tradeable share of the total and\nalways sums to 100 with unlisted_percentage.",
+                "operationId": "getAdminEmitenDetail",
+                "parameters": [
+                    {
+                        "description": "Emiten code",
+                        "example": "BBCA",
+                        "in": "path",
+                        "name": "kode",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/emiten.EmitenDetail"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown emiten"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Get instrument detail (admin)",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
+        "/api/admin/ipo": {
+            "post": {
+                "description": "Lists an instrument and hands its shares to the underwriting syndicate in\none step — an instrument whose shares sit nowhere is not yet an offering.\n\nThe syndicate rules encode what the two roles mean:\n- exactly **one** underwriter with jenis `utama` (the lead that guarantees it)\n- the lead's tranche must be the **largest**; `pendukung` means a smaller portion\n- the tranches must sum to **exactly** listed_shares — a short sum leaves\nshares in nobody's hands, an over-sum conjures shares that were never issued\n\nipo_price becomes the instrument's reference price until it first trades, so\nit has a valuation and something to quote against from the moment it lists.\nThe allocation is one transaction: the audit rows and the share credits move\ntogether or not at all.",
+                "operationId": "runIPO",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/underwriter.IPORequest"
+                            }
+                        }
+                    },
+                    "description": "Offering to run",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/underwriter.IPOResponse"
+                                }
+                            }
+                        },
+                        "description": "Created"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad syndicate, shares do not sum, or unknown underwriter"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Instrument code already exists"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Run an IPO",
                 "tags": [
                     "admin"
                 ]
@@ -1578,6 +2215,112 @@
                 ]
             }
         },
+        "/api/admin/underwriters": {
+            "get": {
+                "description": "Every registered penjamin emisi, ordered by code.\n\njenis is the role: **utama** is the lead underwriter that guarantees an\noffering, **pendukung** a supporting syndicate member taking a smaller\ntranche. participant is the broker the firm trades through — allocated\nshares land in that broker's holdings, because only a participant can\ntrade them.",
+                "operationId": "listUnderwriters",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/underwriter.UnderwriterView"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "List underwriters",
+                "tags": [
+                    "admin"
+                ]
+            },
+            "post": {
+                "description": "Registers a penjamin emisi against an existing broker. The broker is its\ntrading identity: IPO allocations credit that participant's holdings, so an\nunderwriter without one could be handed shares it could never sell.",
+                "operationId": "createUnderwriter",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/underwriter.CreateRequest"
+                            }
+                        }
+                    },
+                    "description": "Underwriter to register",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/underwriter.UnderwriterView"
+                                }
+                            }
+                        },
+                        "description": "Created"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing field, bad jenis, or unknown participant"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-API-Key"
+                    },
+                    "409": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Underwriter code already exists"
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Register an underwriter",
+                "tags": [
+                    "admin"
+                ]
+            }
+        },
         "/api/admin/wallets": {
             "get": {
                 "description": "Every broker's cash balance, or one broker's when `participant` is given.",
@@ -1938,6 +2681,138 @@
                     }
                 ],
                 "summary": "Price history (raw executions)",
+                "tags": [
+                    "participant"
+                ]
+            }
+        },
+        "/api/participant/index": {
+            "get": {
+                "description": "The exchange-wide price level, computed IHSG-style: the summed\nfree-float market capitalisation of every listed instrument, divided by\na divisor and scaled to a base of 100.\n\nEach instrument is valued at its last traded price, falling back to its\nIPO price until it has traded — the same reference price the emiten\ndetail endpoint reports. An instrument with neither is excluded rather\nthan counted as zero, which is why **members** may be lower than\n**total**.\n\nWeighting is by listed (free-float) shares, not total shares outstanding,\nmatching BEI's own methodology since 2021.\n\n**divisor** is restated whenever an instrument lists, so the level does\nnot jump on an event where no price moved. It is returned so a client can\nverify the level rather than trust it.",
+                "operationId": "getIndex",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/index.IndexView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-Participant-Key"
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Index has not been computed yet"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    }
+                ],
+                "summary": "Read the composite index",
+                "tags": [
+                    "participant"
+                ]
+            }
+        },
+        "/api/participant/index/history": {
+            "get": {
+                "description": "Past index levels, newest first. Each point carries the market\ncapitalisation and divisor that produced it, so an old level stays\nverifiable even after the divisor has since been restated.\n\nOptional **from** and **to** bound the range, both RFC 3339 (for example\n`2026-07-30T00:00:00Z`). An unparseable value is rejected with 400 rather\nthan silently ignored, since a filter that quietly does nothing returns a\npage the caller will misread as the whole range.",
+                "operationId": "getIndexHistory",
+                "parameters": [
+                    {
+                        "description": "Start of range, RFC 3339",
+                        "example": "2026-07-30T00:00:00Z",
+                        "in": "query",
+                        "name": "from",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "End of range, RFC 3339",
+                        "example": "2026-07-31T00:00:00Z",
+                        "in": "query",
+                        "name": "to",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Page number, from 1",
+                        "in": "query",
+                        "name": "page",
+                        "schema": {
+                            "default": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows per page, max 100",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                            "default": 10,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.Page-index_SnapshotView"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "from or to is not RFC 3339"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpx.ErrorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong X-Participant-Key"
+                    }
+                },
+                "security": [
+                    {
+                        "ParticipantKeyAuth": []
+                    }
+                ],
+                "summary": "Read the composite index history",
                 "tags": [
                     "participant"
                 ]

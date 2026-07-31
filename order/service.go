@@ -42,12 +42,41 @@ type Result struct {
 	Trades []engine.Trade
 }
 
+// Limits supplies the exchange-wide trading rules an order is validated against.
+//
+// Declared here as an interface rather than taking the config package's cache
+// directly, so this package depends on the one rule it enforces instead of on
+// another domain. Satisfied by marketconfig.Cache.
+type Limits interface {
+	// MinPrice is the lowest price a limit order may carry, in rupiah.
+	MinPrice() int64
+}
+
+// TradeObserver is notified after a matching pass has committed trades.
+//
+// Declared here as an interface rather than taking the index package directly,
+// so this package depends on the one thing it announces rather than on another
+// domain. Satisfied by index.Notifier.
+//
+// Implementations must not block: they are called on the submit path, and the
+// exchange's matching latency is not theirs to spend.
+type TradeObserver interface {
+	// TradesExecuted announces that trades committed and prices have moved.
+	TradesExecuted()
+}
+
 // Service accepts orders: validate, match, persist, publish.
 type Service struct {
-	dir  *market.Directory
-	reg  *market.Registry
-	hub  *market.Hub
-	repo Repository
+	dir    *market.Directory
+	reg    *market.Registry
+	hub    *market.Hub
+	repo   Repository
+	limits Limits
+
+	// trades is notified after a committed matching pass, so derived market data
+	// — the composite index — can refresh. Optional: nil means nothing observes,
+	// which is what the engine tests and any wiring without an index expect.
+	trades TradeObserver
 
 	// submitMu serializes the id-reserve -> match -> persist sequence across every
 	// emiten. Registry.Submit already serializes matching by itself, but its lock
@@ -63,10 +92,19 @@ type Service struct {
 	submitMu sync.Mutex
 }
 
-// NewService wires the write side against the market kernel and the repository.
-func NewService(dir *market.Directory, reg *market.Registry, hub *market.Hub, repo Repository) *Service {
-	return &Service{dir: dir, reg: reg, hub: hub, repo: repo}
+// NewService wires the write side against the market kernel, the repository, and
+// the exchange's trading limits.
+func NewService(dir *market.Directory, reg *market.Registry, hub *market.Hub, repo Repository, limits Limits) *Service {
+	return &Service{dir: dir, reg: reg, hub: hub, repo: repo, limits: limits}
 }
+
+// Observe registers the observer notified after each committed matching pass.
+//
+// A setter rather than a constructor parameter because the observer is optional
+// and, in the composition root, is built after this service: the index service
+// values the market the order path feeds, so requiring it up front would make
+// the two mutually dependent at construction time.
+func (s *Service) Observe(o TradeObserver) { s.trades = o }
 
 // Submit validates an order, matches it, persists the outcome atomically, and
 // publishes the resulting book state.
@@ -78,10 +116,10 @@ func NewService(dir *market.Directory, reg *market.Registry, hub *market.Hub, re
 // broadcast comes last, so subscribers are never told about a trade that failed
 // to commit.
 //
-// Known residual risk: matching mutates the in-memory book before the commit, so
-// a failed transaction leaves an executed-but-unpersisted trade. That window is
-// unavoidable without a write-ahead record, and it is narrower than persisting
-// mid-match; the book is already not reconstructed from the database on restart.
+// A failed transaction does not leave the book divergent: the engine unwinds
+// the whole matching pass when persist errors (engine.SubmitAtomic), so the
+// in-memory book, the ledgers, and the database all still agree — the caller
+// just sees the error and can retry.
 //
 // submitMu holds for the entire reserve-match-persist sequence, across every
 // emiten — not just the match. Registry.Submit serializes matching on its own,
@@ -144,6 +182,13 @@ func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error)
 
 	if len(trades) > 0 || o.Status == engine.Open {
 		s.hub.Broadcast(em.ID, state)
+	}
+
+	// Prices only move when something actually executes, so a pass that only
+	// rested an order leaves derived market data untouched. Announced after the
+	// transaction has committed, so no observer can act on a trade that failed.
+	if len(trades) > 0 && s.trades != nil {
+		s.trades.TradesExecuted()
 	}
 
 	return Result{Order: o, Trades: trades}, nil
@@ -230,6 +275,20 @@ func (s *Service) resolve(cmd SubmitCommand) (market.Emiten, market.Participant,
 	if typ == engine.Limit {
 		if price <= 0 {
 			return em, part, "", "", 0, invalid("price must be > 0 for limit order")
+		}
+		// The exchange's price floor. Checked here, at the gate, so a quote below
+		// it is rejected outright rather than resting in the book — where, as the
+		// best price on its side, it would set the level every later order matches
+		// against. "price > 0" alone is not a market rule: it accepts 58, then 5,
+		// then 1, each one legal on its own and each one dragging the book down
+		// behind it.
+		//
+		// Only limit orders are checked. A market order carries no price at all;
+		// what it pays is the resting order's price, which was itself validated
+		// here on the way in.
+		if floor := s.limits.MinPrice(); price < floor {
+			return em, part, "", "", 0, invalid(
+				"price %d is below the minimum price of %d", price, floor)
 		}
 	} else {
 		price = 0 // market orders carry no price

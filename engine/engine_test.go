@@ -214,3 +214,130 @@ func TestSpecManualScenario(t *testing.T) {
 		t.Fatalf("bids should be empty, got %d", len(e.Book().Bids))
 	}
 }
+
+// snapshotBook captures id/remaining/status of every resting order on both
+// sides, in book order, so a test can assert the book is bit-identical after
+// an unwind.
+type bookRow struct {
+	id, remaining int64
+	status        Status
+}
+
+func snapshotBook(e *Engine) (bids, asks []bookRow) {
+	for _, o := range e.Book().Bids {
+		bids = append(bids, bookRow{o.ID, o.Remaining, o.Status})
+	}
+	for _, o := range e.Book().Asks {
+		asks = append(asks, bookRow{o.ID, o.Remaining, o.Status})
+	}
+	return bids, asks
+}
+
+func assertBookEqual(t *testing.T, e *Engine, wantBids, wantAsks []bookRow) {
+	t.Helper()
+	gotBids, gotAsks := snapshotBook(e)
+	if len(gotBids) != len(wantBids) || len(gotAsks) != len(wantAsks) {
+		t.Fatalf("book size changed: bids %d->%d, asks %d->%d",
+			len(wantBids), len(gotBids), len(wantAsks), len(gotAsks))
+	}
+	for i := range wantBids {
+		if gotBids[i] != wantBids[i] {
+			t.Fatalf("bids[%d]: got %+v, want %+v", i, gotBids[i], wantBids[i])
+		}
+	}
+	for i := range wantAsks {
+		if gotAsks[i] != wantAsks[i] {
+			t.Fatalf("asks[%d]: got %+v, want %+v", i, gotAsks[i], wantAsks[i])
+		}
+	}
+}
+
+func failCommit([]Trade) error { return errTest }
+
+var errTest = errorString("commit failed")
+
+type errorString string
+
+func (e errorString) Error() string { return string(e) }
+
+// A failed commit must leave the book exactly as it was: swept levels
+// reinstated with their original remaining/status, the partially filled level
+// restored, and the incoming order's resting remainder removed.
+func TestSubmitAtomicUnwindsSweep(t *testing.T) {
+	e := NewEngine(emiten)
+	e.Submit(limitOrder(1, Sell, 8000, 100))
+	e.Submit(limitOrder(2, Sell, 8050, 50))
+	e.Submit(limitOrder(3, Sell, 8100, 50))
+	wantBids, wantAsks := snapshotBook(e)
+	seqBefore := *e.seq
+
+	// Sweeps 8000 fully, 8050 partially, then rests 30 on the bid side.
+	buy := limitOrder(4, Buy, 8050, 180)
+	trades, err := e.SubmitAtomic(buy, failCommit)
+	if err == nil || trades != nil {
+		t.Fatalf("want commit error and nil trades, got %v, %+v", err, trades)
+	}
+
+	assertBookEqual(t, e, wantBids, wantAsks)
+	if *e.seq != seqBefore {
+		t.Fatalf("sequencer not restored: got %+v, want %+v", *e.seq, seqBefore)
+	}
+
+	// The book must still be fully functional: the same submission with a
+	// succeeding commit produces the same trades a fresh pass would.
+	retry := limitOrder(4, Buy, 8050, 180)
+	trades, err = e.SubmitAtomic(retry, func([]Trade) error { return nil })
+	if err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if len(trades) != 2 || trades[0].Qty != 100 || trades[0].Price != 8000 || trades[1].Qty != 50 || trades[1].Price != 8050 {
+		t.Fatalf("retry trades wrong: %+v", trades)
+	}
+	if len(e.Book().Bids) != 1 || e.Book().Bids[0].Remaining != 30 {
+		t.Fatalf("retry should rest 30 on bids, got %+v", e.Book().Bids)
+	}
+}
+
+// An incoming order that matches nothing and rests must be removed again on a
+// failed commit.
+func TestSubmitAtomicUnwindsRestingOnly(t *testing.T) {
+	e := NewEngine(emiten)
+	e.Submit(limitOrder(1, Sell, 8100, 50))
+	wantBids, wantAsks := snapshotBook(e)
+
+	buy := limitOrder(2, Buy, 8000, 10) // does not cross; would rest
+	if _, err := e.SubmitAtomic(buy, failCommit); err == nil {
+		t.Fatal("want commit error")
+	}
+	assertBookEqual(t, e, wantBids, wantAsks)
+}
+
+// A market order never rests, so the unwind only has passive fills to restore.
+func TestSubmitAtomicUnwindsMarketOrder(t *testing.T) {
+	e := NewEngine(emiten)
+	e.Submit(limitOrder(1, Sell, 8000, 30))
+	e.Submit(limitOrder(2, Sell, 8500, 20))
+	wantBids, wantAsks := snapshotBook(e)
+
+	buy := marketOrder(3, Buy, 100) // sweeps both levels, leftover cancelled
+	if _, err := e.SubmitAtomic(buy, failCommit); err == nil {
+		t.Fatal("want commit error")
+	}
+	assertBookEqual(t, e, wantBids, wantAsks)
+}
+
+// A successful commit keeps the matched state — SubmitAtomic must be
+// indistinguishable from Submit when nothing fails.
+func TestSubmitAtomicCommitKeepsState(t *testing.T) {
+	e := NewEngine(emiten)
+	e.Submit(limitOrder(1, Sell, 8000, 100))
+
+	buy := limitOrder(2, Buy, 8000, 40)
+	trades, err := e.SubmitAtomic(buy, func([]Trade) error { return nil })
+	if err != nil || len(trades) != 1 || trades[0].Qty != 40 {
+		t.Fatalf("got err=%v trades=%+v, want one trade of 40", err, trades)
+	}
+	if e.Book().Asks[0].Remaining != 60 {
+		t.Fatalf("ask remaining = %d, want 60", e.Book().Asks[0].Remaining)
+	}
+}

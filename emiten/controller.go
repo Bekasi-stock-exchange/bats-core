@@ -98,6 +98,48 @@ func (c *Controller) Create(w http.ResponseWriter, r *http.Request) {
 //	@Security		ParticipantKeyAuth
 //	@Router			/api/participant/emiten/{kode} [get]
 func (c *Controller) Detail(w http.ResponseWriter, r *http.Request) {
+	c.detail(w, r)
+}
+
+// AdminDetail handles GET /api/admin/emiten/{kode}.
+//
+// The same view as the participant detail, behind the admin key: the admin list
+// omits price statistics because computing them per row costs a query per
+// instrument, so this is where an operator reads them for one instrument.
+//
+//	@Summary		Get instrument detail (admin)
+//	@Description	The same instrument detail the participant tier reads, on the admin key —
+//	@Description	so oversight does not require holding a broker's credential. The admin list
+//	@Description	omits price statistics — computing them per row would be a query per
+//	@Description	instrument — so this endpoint is where they are read.
+//	@Description
+//	@Description	current_price, highest_price and lowest_price are strictly trade-derived and
+//	@Description	are **null**, not 0, for an instrument that has never traded. reference_price
+//	@Description	is what the instrument is valued at and falls back to ipo_price until the
+//	@Description	first trade; price_source names which of the two it came from.
+//	@Description
+//	@Description	value is market capitalisation (reference price × total shares), derived on
+//	@Description	read rather than stored, so it always reflects the latest trade.
+//	@Description	free_float_percentage is the publicly tradeable share of the total and
+//	@Description	always sums to 100 with unlisted_percentage.
+//	@Tags			admin
+//	@ID				getAdminEmitenDetail
+//	@Produce		json
+//	@Param			kode	path		string	true	"Emiten code"	example(BBCA)
+//	@Success		200		{object}	emiten.EmitenDetail
+//	@Failure		401		{object}	httpx.ErrorResponse	"Missing or wrong X-API-Key"
+//	@Failure		404		{object}	httpx.ErrorResponse	"Unknown emiten"
+//	@Security		ApiKeyAuth
+//	@Router			/api/admin/emiten/{kode} [get]
+func (c *Controller) AdminDetail(w http.ResponseWriter, r *http.Request) {
+	c.detail(w, r)
+}
+
+// detail serves the instrument detail view. Both tiers return the same payload —
+// master data is not confidential and the price statistics are the same numbers —
+// so the handler is shared and only the guarding middleware differs. Keeping one
+// body means the two views cannot drift apart as fields are added.
+func (c *Controller) detail(w http.ResponseWriter, r *http.Request) {
 	kode := r.PathValue("kode")
 
 	e, stats, err := c.svc.Detail(r.Context(), kode)

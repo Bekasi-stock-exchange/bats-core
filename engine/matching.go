@@ -128,6 +128,85 @@ func (e *Engine) Submit(o *Order) []Trade {
 	return trades
 }
 
+// SubmitAtomic runs o through matching, then hands the resulting trades to
+// commit. If commit succeeds the book keeps the matched state; if it fails,
+// every effect of the matching pass — popped and partially filled resting
+// orders, the incoming order's insertion, and the consumed sequence numbers —
+// is reversed before the error is returned, leaving the book exactly as it was.
+//
+// This is what keeps the in-memory book from drifting away from the database:
+// without the unwind, a failed persist leaves orders in the book that the
+// database never saw, and every later match against one of those phantoms
+// fails its foreign-key or balance check forever.
+//
+// The unwind is exact, not approximate, because Submit's mutation surface is
+// narrow: it only pops from the front of the opposite side (which never writes
+// to that side's backing array, so the pre-match slice header still views the
+// original orders), decrements Remaining on passive orders through pointers
+// (reversible from the trade list), and may insert o into its own side
+// (reversible by removing it).
+func (e *Engine) SubmitAtomic(o *Order, commit func([]Trade) error) ([]Trade, error) {
+	seq := *e.seq
+	opposite := e.book.Asks
+	if o.Side == Sell {
+		opposite = e.book.Bids
+	}
+
+	trades := e.Submit(o)
+	if err := commit(trades); err != nil {
+		e.unwind(o, trades, opposite, seq)
+		return nil, err
+	}
+	return trades, nil
+}
+
+// unwind reverses one matching pass. opposite is the pre-match slice header of
+// the side o matched against, and seq the pre-match sequencer state.
+func (e *Engine) unwind(o *Order, trades []Trade, opposite []*Order, seq Sequencer) {
+	// After Submit, Status == Open means the limit remainder was inserted into
+	// o's own side (a filled order is Filled, a market leftover is Cancelled).
+	if o.Status == Open {
+		if o.Side == Buy {
+			e.book.Bids = removeOrder(e.book.Bids, o)
+		} else {
+			e.book.Asks = removeOrder(e.book.Asks, o)
+		}
+	}
+
+	// Reinstate the popped passive orders by restoring the pre-match slice
+	// header, then give each one back the quantity its trade consumed.
+	if o.Side == Buy {
+		e.book.Asks = opposite
+	} else {
+		e.book.Bids = opposite
+	}
+	for _, t := range trades {
+		passiveID := t.SellOrderID
+		if o.Side == Sell {
+			passiveID = t.BuyOrderID
+		}
+		for _, p := range opposite {
+			if p.ID == passiveID {
+				p.Remaining += t.Qty
+				p.Status = Open
+				break
+			}
+		}
+	}
+
+	*e.seq = seq
+}
+
+// removeOrder deletes o from s by identity, preserving the order of the rest.
+func removeOrder(s []*Order, o *Order) []*Order {
+	for i, cur := range s {
+		if cur == o {
+			return append(s[:i], s[i+1:]...)
+		}
+	}
+	return s
+}
+
 // Restore re-inserts an order that was already resting in the book before a
 // restart, without running it through matching.
 //

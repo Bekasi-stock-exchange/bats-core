@@ -7,12 +7,15 @@ import (
 
 	"bekasi-automatic-trading-system/assets"
 	"bekasi-automatic-trading-system/emiten"
+	"bekasi-automatic-trading-system/index"
+	"bekasi-automatic-trading-system/marketconfig"
 	"bekasi-automatic-trading-system/order"
 	"bekasi-automatic-trading-system/orderbook"
 	"bekasi-automatic-trading-system/participant"
 	"bekasi-automatic-trading-system/platform/docs"
 	"bekasi-automatic-trading-system/platform/httpx"
 	"bekasi-automatic-trading-system/trade"
+	"bekasi-automatic-trading-system/underwriter"
 	"bekasi-automatic-trading-system/wallet"
 )
 
@@ -29,6 +32,9 @@ type Deps struct {
 	WS          *orderbook.WSController
 	Participant *participant.Controller
 	Emiten      *emiten.Controller
+	Index       *index.Controller
+	Underwriter *underwriter.Controller
+	Config      *marketconfig.Controller
 	Assets      *assets.Controller
 	Wallet      *wallet.Controller
 	Trade       *trade.Controller
@@ -61,14 +67,28 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/participant/emiten/{kode}", broker(d.Emiten.Detail))
 	mux.HandleFunc("GET /api/participant/emiten/{kode}/prices", broker(d.Trade.Ticks))
 	mux.HandleFunc("GET /api/participant/emiten/{kode}/candles", broker(d.Trade.Candles))
+	// The composite index is market data, so it sits in the participant tier
+	// alongside the order book: every broker reads the same level.
+	mux.HandleFunc("GET /api/participant/index", broker(d.Index.Current))
+	mux.HandleFunc("GET /api/participant/index/history", broker(d.Index.History))
 
 	// --- Admin tier: management and oversight ----------------------------
+	// Trading parameters are an exchange operation, never a broker one: a rule
+	// every participant is held to cannot be editable by one of them.
+	mux.HandleFunc("GET /api/admin/config", admin(d.Config.Get))
+	mux.HandleFunc("PUT /api/admin/config", admin(d.Config.Update))
 	mux.HandleFunc("GET /api/admin/participants", admin(d.Participant.List))
 	mux.HandleFunc("POST /api/admin/participants", admin(d.Participant.Create))
 	mux.HandleFunc("POST /api/admin/participants/apikey", admin(d.Participant.IssueKey))
 	mux.HandleFunc("DELETE /api/admin/participants/apikey", admin(d.Participant.RevokeKey))
 	mux.HandleFunc("GET /api/admin/emiten", admin(d.Emiten.List))
 	mux.HandleFunc("POST /api/admin/emiten", admin(d.Emiten.Create))
+	mux.HandleFunc("GET /api/admin/emiten/{kode}", admin(d.Emiten.AdminDetail))
+	mux.HandleFunc("GET /api/admin/underwriters", admin(d.Underwriter.List))
+	mux.HandleFunc("POST /api/admin/underwriters", admin(d.Underwriter.Create))
+	// Admin-only by design: an offering both lists an instrument and issues its
+	// shares, so it is an exchange operation, never a broker one.
+	mux.HandleFunc("POST /api/admin/ipo", admin(d.Underwriter.IPO))
 	mux.HandleFunc("GET /api/admin/orders", admin(d.Order.List))
 	mux.HandleFunc("GET /api/admin/trades", admin(d.Trade.ListTrades))
 	mux.HandleFunc("GET /api/admin/transactions", admin(d.Trade.AdminTransactions))

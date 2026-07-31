@@ -108,8 +108,7 @@ func NewRegistry(emitens []Emiten, holdings []Holding, wallets []Wallet, seq *en
 // Seq.
 //
 // Takes the lock itself: called once at startup, before the registry serves
-// any request, or standalone by a caller that is not already holding it.
-// Rebuild calls the unlocked half directly because it already holds the lock.
+// any request.
 func (r *Registry) RestoreOpenOrders(orders []OpenOrder) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -166,6 +165,21 @@ func (r *Registry) AddBook(e Emiten) {
 	r.books[e.ID] = newBook(e, r.seq)
 }
 
+// CreditShares adds shares to a broker's holding outside of any trade.
+//
+// It exists for primary-market issuance: an IPO allocation puts shares into a
+// participant's hands without a matching sell side, which applyTrades — built
+// around a buyer and a seller exchanging an existing holding — cannot express.
+//
+// The caller must have already persisted the credit. This only moves the
+// in-memory ledger into agreement with the database; without it the underwriter's
+// first sell is refused for insufficient shares even though the row says otherwise.
+func (r *Registry) CreditShares(participantID, emitenID, shares int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pos.addHeld(participantID, emitenID, shares)
+}
+
 // Holding reports a broker's current holding of one emiten.
 func (r *Registry) Holding(participantID, emitenID int64) int64 {
 	r.mu.Lock()
@@ -184,16 +198,13 @@ func (r *Registry) Holding(participantID, emitenID int64) int64 {
 // exactly the book that produced those trades. The engine mutates o in place:
 // Seq, Remaining and Status are set on return.
 //
-// The ledger (held/reserved shares, cash/cashReserved balances) is deliberately
-// applied only after persist returns success. Matching itself cannot be
-// undone once run — the engine has already popped consumed resting orders and
-// possibly inserted o into the book — but that is a queue-ordering fact, not
-// money or shares, and staying wrong about it until the next successful
-// submission or restart is a far cheaper mistake than a ledger entry that
-// silently disagrees with the database. If persist fails, the ledger is
-// untouched and will not drift: the only cost is that Submit's caller sees an
-// error for an order the book already reflects, which SaveExecution's own
-// transaction guarantees never happened at the database's expense.
+// The ledger (held/reserved shares, cash/cashReserved balances) is applied
+// only after persist returns success, and a failed persist unwinds the
+// matching pass itself (SubmitAtomic), so on error neither the book nor the
+// ledger has moved. Both halves matter: a book entry the database never saw
+// is a phantom that every later match trips over — its trades foreign-key to
+// a missing order row, and its unreserved shares let a seller go negative at
+// the balance check — and none of that can self-heal short of a restart.
 func (r *Registry) Submit(o *engine.Order, persist func([]engine.Trade) error) ([]engine.Trade, BookState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -207,8 +218,8 @@ func (r *Registry) Submit(o *engine.Order, persist func([]engine.Trade) error) (
 	}
 
 	// A sell must be covered by shares that are not already promised to this
-	// broker's resting sell orders. Checked before matching, because matching
-	// cannot be undone.
+	// broker's resting sell orders. Checked before matching, so a short sell is
+	// a clean rejection rather than a matching pass that has to be unwound.
 	if o.Side == engine.Sell {
 		if o.Qty > r.pos.available(o.ParticipantID, o.EmitenID) {
 			return nil, BookState{}, ErrInsufficientShares
@@ -225,9 +236,8 @@ func (r *Registry) Submit(o *engine.Order, persist func([]engine.Trade) error) (
 		}
 	}
 
-	trades := b.engine.Submit(o)
-
-	if err := persist(trades); err != nil {
+	trades, err := b.engine.SubmitAtomic(o, persist)
+	if err != nil {
 		return nil, BookState{}, err
 	}
 

@@ -37,20 +37,23 @@ func (r *Asset) LoadHoldings(ctx context.Context) ([]market.Holding, error) {
 		})
 }
 
-// holdingsQuery selects holdings with their market value derived from the latest
-// trade price.
+// holdingsQuery selects holdings with the two prices a valuation may draw on: the
+// latest trade, and the emiten's IPO price.
 //
-// Value is computed here rather than stored because it depends on the last price:
-// one trade in an emiten changes the value of every broker holding it, so a stored
-// column would need a fan-out update on every match, or it would be stale for
-// every broker that did not trade.
+// Value is computed on read rather than stored because it depends on the last
+// price: one trade in an emiten changes the value of every broker holding it, so a
+// stored column would need a fan-out update on every match, or it would be stale
+// for every broker that did not trade.
 //
 // LEFT JOIN LATERAL, not an inner join: an emiten that has never traded has no
-// price, so value is NULL rather than 0 — a million shares are not worth nothing
-// merely because the market has not opened.
+// trade price, and the row must still come back — a million shares are not worth
+// nothing merely because the market has not opened. Which of the two prices wins
+// is market.Emiten.ReferencePrice's decision, not this query's; both are carried
+// up so the nil cases stay distinguishable in the transformer.
 const holdingsQuery = `
-	SELECT b.participant_id, b.emiten_id, b.amount_shared, b.updated_at, lp.price
+	SELECT b.participant_id, b.emiten_id, b.amount_shared, b.updated_at, lp.price, e.ipo_price
 	FROM broker_assets_list b
+	JOIN emiten e ON e.id = b.emiten_id
 	LEFT JOIN LATERAL (
 	    SELECT price FROM trades
 	    WHERE emiten_id = b.emiten_id
@@ -61,11 +64,12 @@ const holdingsQuery = `
 	ORDER BY b.participant_id, b.emiten_id
 	LIMIT $2 OFFSET $3`
 
-// scanHolding maps a holdings row, leaving Price nil when the emiten has never
-// traded.
+// scanHolding maps a holdings row, leaving LastPrice nil when the emiten has never
+// traded and IPOPrice nil when it was listed without one.
 func scanHolding(rows pgx.Rows) (assets.Record, error) {
 	var rec assets.Record
-	err := rows.Scan(&rec.ParticipantID, &rec.EmitenID, &rec.AmountShared, &rec.UpdatedAt, &rec.LastPrice)
+	err := rows.Scan(&rec.ParticipantID, &rec.EmitenID, &rec.AmountShared, &rec.UpdatedAt,
+		&rec.LastPrice, &rec.IPOPrice)
 	return rec, err
 }
 
@@ -98,10 +102,15 @@ func (r *Asset) CountHoldings(ctx context.Context, participantID *int64) (int, e
 // the same sequence.
 //
 // The row may not exist yet — a broker's first trade in an instrument creates it —
-// hence the upsert. The CHECK (amount_shared >= 0) is the last line of defence: the
-// sell was already checked against available shares before matching, so a violation
-// here means the in-memory ledger and this table have drifted, and failing the
-// transaction is the right outcome.
+// hence the ensure-row insert. It cannot be a single ON CONFLICT DO UPDATE upsert
+// carrying the delta: Postgres evaluates CHECK constraints on the proposed insert
+// tuple *before* conflict arbitration, so a negative delta (every seller) would
+// violate CHECK (amount_shared >= 0) even when the existing row easily covers it.
+// Inserting 0 and applying the delta in a separate UPDATE makes the constraint
+// judge only the final balance, which is the intended last line of defence: the
+// sell was already checked against available shares before matching, so a
+// violation here means the in-memory ledger and this table have drifted, and
+// failing the transaction is the right outcome.
 func applyAssetDeltas(ctx context.Context, tx pgx.Tx, deltas []order.AssetDelta) error {
 	if len(deltas) == 0 {
 		return nil
@@ -111,10 +120,14 @@ func applyAssetDeltas(ctx context.Context, tx pgx.Tx, deltas []order.AssetDelta)
 	for _, d := range deltas {
 		batch.Queue(`
 			INSERT INTO broker_assets_list (participant_id, emiten_id, amount_shared)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (participant_id, emiten_id) DO UPDATE
-			SET amount_shared = broker_assets_list.amount_shared + EXCLUDED.amount_shared,
-			    updated_at    = now()`,
+			VALUES ($1, $2, 0)
+			ON CONFLICT (participant_id, emiten_id) DO NOTHING`,
+			d.ParticipantID, d.EmitenID)
+		batch.Queue(`
+			UPDATE broker_assets_list
+			SET amount_shared = amount_shared + $3,
+			    updated_at    = now()
+			WHERE participant_id = $1 AND emiten_id = $2`,
 			d.ParticipantID, d.EmitenID, d.Delta)
 	}
 

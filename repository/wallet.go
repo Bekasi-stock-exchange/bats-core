@@ -94,10 +94,14 @@ func (r *Wallet) FindWallet(ctx context.Context, participantID int64) (wallet.Re
 // ordering makes concurrent transactions take row locks in the same sequence.
 //
 // The row may not exist yet — a broker's first trade creates it — hence the
-// upsert. The CHECK (balance >= 0) is the last line of defence: the buy was
-// already checked against available cash before matching, so a violation here
-// means the in-memory ledger and this table have drifted, and failing the
-// transaction is the right outcome.
+// ensure-row insert. It cannot be a single ON CONFLICT DO UPDATE upsert carrying
+// the delta: Postgres evaluates CHECK constraints on the proposed insert tuple
+// *before* conflict arbitration, so a negative delta (every buyer) would violate
+// CHECK (balance >= 0) even when the existing row easily covers it — see
+// applyAssetDeltas. The CHECK is the last line of defence: the buy was already
+// checked against available cash before matching, so a violation of the final
+// balance means the in-memory ledger and this table have drifted, and failing
+// the transaction is the right outcome.
 func applyWalletDeltas(ctx context.Context, tx pgx.Tx, deltas []order.WalletDelta) error {
 	if len(deltas) == 0 {
 		return nil
@@ -107,10 +111,14 @@ func applyWalletDeltas(ctx context.Context, tx pgx.Tx, deltas []order.WalletDelt
 	for _, d := range deltas {
 		batch.Queue(`
 			INSERT INTO broker_wallet (participant_id, balance)
-			VALUES ($1, $2)
-			ON CONFLICT (participant_id) DO UPDATE
-			SET balance    = broker_wallet.balance + EXCLUDED.balance,
-			    updated_at = now()`,
+			VALUES ($1, 0)
+			ON CONFLICT (participant_id) DO NOTHING`,
+			d.ParticipantID)
+		batch.Queue(`
+			UPDATE broker_wallet
+			SET balance    = balance + $2,
+			    updated_at = now()
+			WHERE participant_id = $1`,
 			d.ParticipantID, d.Delta)
 	}
 

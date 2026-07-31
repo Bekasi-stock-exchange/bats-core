@@ -54,7 +54,9 @@ import (
 	"bekasi-automatic-trading-system/assets"
 	"bekasi-automatic-trading-system/emiten"
 	"bekasi-automatic-trading-system/engine"
+	"bekasi-automatic-trading-system/index"
 	"bekasi-automatic-trading-system/market"
+	"bekasi-automatic-trading-system/marketconfig"
 	"bekasi-automatic-trading-system/order"
 	"bekasi-automatic-trading-system/orderbook"
 	"bekasi-automatic-trading-system/participant"
@@ -64,6 +66,7 @@ import (
 	"bekasi-automatic-trading-system/platform/server"
 	"bekasi-automatic-trading-system/repository"
 	"bekasi-automatic-trading-system/trade"
+	"bekasi-automatic-trading-system/underwriter"
 	"bekasi-automatic-trading-system/wallet"
 )
 
@@ -103,6 +106,7 @@ func runServer() error {
 	// twice below rather than being constructed twice.
 	master := repository.NewMaster(pool)
 	trades := repository.NewTrade(pool)
+	indexes := repository.NewIndex(pool)
 
 	repos := repositories{
 		master:       master,
@@ -111,6 +115,10 @@ func runServer() error {
 		wallet:       repository.NewWallet(pool),
 		participant:  repository.NewParticipant(pool),
 		trade:        trades,
+		underwriter:  repository.NewUnderwriter(pool),
+		config:       repository.NewMarketConfig(pool),
+		index:        indexes,
+		indexPrices:  indexes,
 		emitenWriter: master,
 		prices:       trades,
 	}
@@ -121,14 +129,51 @@ func runServer() error {
 		return err
 	}
 
+	// Trading parameters, loaded before anything can enforce them. The cache is
+	// what the order path reads on every submission, so it is filled from the
+	// database here rather than lazily: a first order arriving before the load
+	// would otherwise be validated against the built-in default instead of the
+	// operator's configuration.
+	configCache := marketconfig.NewCache()
+	configSvc := marketconfig.NewService(repos.config, configCache)
+	if err := configSvc.Load(ctx); err != nil {
+		return err
+	}
+
 	// Services.
-	orderSvc := order.NewService(kernel.dir, kernel.reg, kernel.hub, repos.order)
+	orderSvc := order.NewService(kernel.dir, kernel.reg, kernel.hub, repos.order, configCache)
 	bookSvc := orderbook.NewService(kernel.dir, kernel.reg, kernel.hub)
 	partSvc := participant.NewService(repos.participant, kernel.dir)
 	emitenSvc := emiten.NewService(kernel.dir, kernel.reg, repos.emitenWriter, repos.prices)
 	assetSvc := assets.NewService(kernel.dir, repos.asset)
 	walletSvc := wallet.NewService(kernel.dir, repos.wallet)
 	tradeSvc := trade.NewService(kernel.dir, repos.trade)
+	// The underwriter domain drives emitenSvc for the listing half of an IPO, so it
+	// is constructed after it.
+	underwriterSvc := underwriter.NewService(repos.underwriter, emitenSvc, kernel.dir, kernel.reg)
+
+	// The composite index, loaded before the server accepts a request so the first
+	// read reports a real level rather than a 503. Load also bootstraps the divisor
+	// on a fresh database, where migration 014 could only seed a placeholder.
+	indexCache := index.NewCache()
+	indexSvc := index.NewService(kernel.dir, repos.index, repos.indexPrices, indexCache)
+	if err := indexSvc.Load(ctx); err != nil {
+		return err
+	}
+
+	// Recomputation runs on its own goroutine, not on the order path: valuing the
+	// whole market inside the submit lock would add that cost to every order's
+	// latency. The notifier is what connects the two without coupling them.
+	indexNotifier := index.NewNotifier(indexSvc)
+	orderSvc.Observe(indexNotifier)
+	go indexNotifier.Run(context.WithoutCancel(ctx))
+	defer indexNotifier.Close()
+
+	// A new listing adds its whole market cap at once. The index service restates
+	// its divisor to absorb that, so the level does not jump on an event where no
+	// price moved. Registered on the emiten service, which both the admin listing
+	// endpoint and the IPO path go through.
+	emitenSvc.ObserveListings(indexSvc)
 
 	handler := server.Handler(server.Deps{
 		APIKey:      cfg.APIKey,
@@ -143,6 +188,9 @@ func runServer() error {
 		WS:          orderbook.NewWSController(bookSvc),
 		Participant: participant.NewController(partSvc, repository.IsDuplicate),
 		Emiten:      emiten.NewController(emitenSvc, repository.IsDuplicate),
+		Index:       index.NewController(indexSvc),
+		Underwriter: underwriter.NewController(underwriterSvc, underwriter.NewCodes(kernel.dir), repository.IsDuplicate),
+		Config:      marketconfig.NewController(configSvc),
 		Assets:      assets.NewController(assetSvc, assets.NewCodes(kernel.dir)),
 		Wallet:      wallet.NewController(walletSvc, wallet.NewCodes(kernel.dir)),
 		Trade:       trade.NewController(tradeSvc, trade.NewCodes(kernel.dir)),
@@ -200,6 +248,16 @@ type repositories struct {
 	wallet      wallet.Repository
 	participant participant.Repository
 	trade       trade.Repository
+	underwriter underwriter.Repository
+	config      marketconfig.Repository
+
+	// index and indexPrices are both satisfied by the index repository: one owns
+	// the stored definition and its history, the other the market-wide price read
+	// the computation needs. They are separate interfaces because the second is a
+	// read over the trades table, and keeping it distinct is what lets the index
+	// domain state that dependency without importing the trade domain.
+	index       index.Repository
+	indexPrices index.PriceRepository
 
 	// emitenWriter and prices are narrower views the emiten domain declares:
 	// one to list an instrument, one to read its price statistics. They are

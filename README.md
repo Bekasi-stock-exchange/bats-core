@@ -1,245 +1,250 @@
 # JAST Core
 
-A minimal **matching engine** modeled on JATS (Jakarta Automated Trading System) of
-Bursa Efek Indonesia. It performs continuous, price-time-priority matching of buy and
-sell orders in memory, and persists master data and trade history to PostgreSQL.
+Sebuah **matching engine** minimal yang dimodelkan dari JATS (Jakarta Automated Trading
+System) milik Bursa Efek Indonesia. Sistem ini melakukan pencocokan order beli dan jual
+secara kontinu dengan prioritas harga-waktu di memori, serta menyimpan data master dan
+riwayat transaksi ke PostgreSQL.
 
-This is an **exchange engine**, not a brokerage application. It knows only brokers
-(*participants*), not individual investors, and its responsibility ends at **trade
-execution** — clearing (KPEI) and settlement (KSEI) are out of scope.
+Ini adalah **mesin bursa**, bukan aplikasi broker. Sistem hanya mengenal broker
+(*partisipan*), bukan investor perorangan, dan tanggung jawabnya berhenti di **eksekusi
+transaksi** — kliring (KPEI) dan penyelesaian (KSEI) berada di luar cakupan.
 
 ```
-Order → [ JATS: matching ] → Trade → [ KPEI: clearing ] → [ KSEI: settlement ]
+Order → [ JATS: matching ] → Trade → [ KPEI: kliring ] → [ KSEI: settlement ]
          ^^^^^^^^^^^^^^^^^^^^^^^^^
-         this project
+         proyek ini
 ```
 
-## Features
+## Fitur
 
-- Continuous matching — orders are matched the moment they arrive
-- Order types: **limit** and **market**
-- **Price-time priority** (FIFO within a price level)
-- Partial fills
-- In-memory order book, one per emiten
-- PostgreSQL persistence for master data and trade history
-- REST API to submit orders and view the book
-- WebSocket streaming of order-book updates
-- Two-tier auth: a static admin key, and per-broker keys stored hashed in the database
-- Share holdings per broker, written atomically with the match that moves them
-- Price history (raw executions and OHLC candles) and instrument detail
-- OpenAPI 3.0 documentation generated from the code and served from the binary
+- Continuous matching — order dicocokkan begitu masuk
+- Tipe order: **limit** dan **market**
+- **Prioritas harga-waktu** (FIFO dalam satu level harga)
+- Partial fill
+- Order book di memori, satu per emiten
+- Persistensi PostgreSQL untuk data master dan riwayat transaksi
+- REST API untuk mengirim order dan melihat order book
+- Streaming perubahan order book via WebSocket
+- Autentikasi dua tingkat: admin key statis, dan key per broker yang disimpan ter-hash di database
+- Kepemilikan saham per broker, ditulis atomik bersama match yang memindahkannya
+- Riwayat harga (eksekusi mentah dan candle OHLC) serta detail instrumen
+- Dokumentasi OpenAPI 3.0 yang digenerate dari kode dan disajikan dari binary
 
-**Deliberately out of scope:** call auction / pre-opening, other order types (stop-loss,
-iceberg, FOK, GTD), customer accounts / balances / portfolios, clearing & settlement,
-corporate actions, index free-float adjustment, microservices, message brokers,
-and any frontend.
+**Sengaja di luar cakupan:** call auction / pra-pembukaan, tipe order lain (stop-loss,
+iceberg, FOK, GTD), akun/saldo/portofolio nasabah, kliring & penyelesaian, aksi korporasi,
+penyesuaian free-float indeks, microservice, message broker, dan frontend apa pun.
 
-## Architecture
+## Arsitektur
 
-A modular monolith organised **by domain**, not by layer. Each domain is one package
-containing its own controller, service and transformer:
+Monolit modular yang diorganisasi **per domain**, bukan per layer. Setiap domain adalah satu
+package yang memuat controller, service, dan transformer-nya sendiri:
 
-| Layer | Owns | Never does |
+| Layer | Bertanggung jawab atas | Tidak pernah melakukan |
 |---|---|---|
-| **Controller** | Decode the request, call the service, write the transformed result | Business rules, SQL |
-| **Service** | Validation, orchestration, transaction boundary | HTTP, SQL strings |
-| **Transformer** | Domain/engine types → JSON DTOs | Anything else |
-| **Repository** | Every SQL statement in the application | Validation, matching |
+| **Controller** | Decode request, panggil service, tulis hasil yang sudah ditransformasi | Aturan bisnis, SQL |
+| **Service** | Validasi, orkestrasi, batas transaksi | HTTP, string SQL |
+| **Transformer** | Tipe domain/engine → DTO JSON | Selain itu |
+| **Repository** | Seluruh statement SQL dalam aplikasi | Validasi, matching |
 
-Dependencies run one way:
+Dependensi mengalir satu arah:
 
 ```
 order       →  engine, market, platform
 orderbook   →  market, platform
 market      →  engine
-repository  →  order, market        (implements the interfaces THEY declare)
-main        →  everything           (composition root)
+repository  →  order, market        (mengimplementasikan interface yang MEREKA deklarasikan)
+main        →  semuanya             (composition root)
 
-engine imports nothing outside itself
-order and orderbook never import each other
+engine tidak mengimpor apa pun di luar dirinya
+order dan orderbook tidak pernah saling mengimpor
 ```
 
-`engine` sits at the root rather than under `market` because `engine.Order` and
-`engine.Trade` are domain types the order package speaks directly — it is a shared kernel
-in its own right, not a private detail of `market`.
+`engine` berada di root, bukan di bawah `market`, karena `engine.Order` dan `engine.Trade`
+adalah tipe domain yang langsung dipakai package order — ia adalah shared kernel tersendiri,
+bukan detail privat milik `market`.
 
-Two rules make that hold:
+Dua aturan yang menjaga hal itu tetap berlaku:
 
-- **`engine` is pure.** No HTTP library, no database driver, no `encoding/json`, and
-  its types carry no struct tags — so the matching logic stays extractable into a
-  standalone service.
-- **Interfaces are declared by the consumer.** `order.Repository` and
-  `market.MasterRepository` are defined in the packages that use them, and `repository`
-  imports those packages to satisfy them. So no domain package depends on a database type.
+- **`engine` bersifat murni.** Tanpa library HTTP, tanpa driver database, tanpa
+  `encoding/json`, dan tipe-tipenya tidak membawa struct tag — sehingga logika matching
+  tetap bisa diekstrak menjadi service tersendiri.
+- **Interface dideklarasikan oleh konsumennya.** `order.Repository` dan
+  `market.MasterRepository` didefinisikan di package yang memakainya, dan `repository`
+  mengimpor package tersebut untuk memenuhinya. Jadi tidak ada package domain yang
+  bergantung pada tipe database.
 
-`market` exists so the two domains never touch each other: it owns the order books, the
-single mutex that serializes matching, the master-data directory, and the WebSocket
-fan-out hub. The hub carries tag-free `market.BookState`, which is why the order service
-can publish a book update without importing the orderbook package's DTOs.
+`market` ada supaya kedua domain tidak pernah bersentuhan: ia memiliki order book, satu-satunya
+mutex yang menserialisasi matching, direktori data master, dan hub fan-out WebSocket. Hub
+membawa `market.BookState` yang bebas tag, itulah sebabnya order service bisa mempublikasikan
+pembaruan book tanpa mengimpor DTO milik package orderbook.
 
-`viper` is confined to `platform/config`; every other package receives plain values.
+`viper` dibatasi hanya di `platform/config`; semua package lain menerima nilai biasa.
 
-### Layout
+### Struktur direktori
 
 ```
-engine/            order.go  orderbook.go  matching.go  engine_test.go  # pure matching core
+engine/            order.go  orderbook.go  matching.go  engine_test.go  # inti matching murni
 market/            registry.go  directory.go  positions.go  book.go
-                   hub.go  ports.go                       # books, THE lock, share ledger, master data
+                   hub.go  ports.go                 # book, LOCK utama, ledger saham, data master
 order/             controller.go  service.go  transformer.go  dto.go  ports.go
 orderbook/         controller.go  ws_controller.go  service.go  transformer.go  dto.go
 participant/       controller.go  service.go  middleware.go  context.go
-                   transformer.go  dto.go  ports.go       # broker identity + key auth
+                   transformer.go  dto.go  ports.go       # identitas broker + auth key
 emiten/            controller.go  service.go  transformer.go  dto.go  ports.go
 assets/            controller.go  service.go  transformer.go  dto.go  ports.go
 trade/             controller.go  service.go  transformer.go  dto.go  ports.go
 repository/        repository.go  master.go  emiten.go  participant.go
-                   order.go  trade.go  asset.go                         # ALL SQL lives here
-platform/config/   config.go                                            # viper env management
-platform/postgres/ pool.go                                              # pgx pool + QueryAll helper
+                   order.go  trade.go  asset.go                         # SEMUA SQL di sini
+platform/config/   config.go                                            # manajemen env viper
+platform/postgres/ pool.go                                              # pool pgx + helper QueryAll
 platform/httpx/    respond.go  pagination.go  middleware.go             # JSON, paging, auth
-platform/docs/     handler.go  swagger.yaml  swagger.json               # Swagger UI + generated spec
-platform/server/   router.go                                            # the route table
-cmd/migrate/       main.go                                              # migration runner
-cmd/gendocs/       main.go                                              # OpenAPI generation
-migrations/        001_emiten.sql .. 007_auth_assets_unlisted.sql       # schema + seed
+platform/docs/     handler.go  swagger.yaml  swagger.json               # Swagger UI + spec hasil generate
+platform/server/   router.go                                            # tabel route
+cmd/migrate/       main.go                                              # runner migrasi
+cmd/gendocs/       main.go                                              # generasi OpenAPI
+migrations/        001_emiten.sql .. 007_auth_assets_unlisted.sql       # skema + seed
 main.go                                                                 # composition root
 ```
 
-**All SQL lives in `repository/`, one file per feature.** No other package contains a
-query. The order and trade queries are separate files but share one transaction, so a
-matching outcome is written atomically.
+**Semua SQL berada di `repository/`, satu file per fitur.** Tidak ada package lain yang memuat
+query. Query order dan trade berada di file terpisah tetapi berbagi satu transaksi, sehingga
+hasil matching ditulis secara atomik.
 
-## Requirements
+## Kebutuhan
 
-- Go **1.22+** (developed on 1.26)
-- PostgreSQL (any recent version)
+- Go **1.22+** (dikembangkan pada 1.26)
+- PostgreSQL (versi terbaru mana pun)
 
-### Dependencies
+### Dependensi
 
-| Purpose | Library |
+| Kegunaan | Library |
 |---|---|
-| HTTP server & routing | `net/http` (stdlib, method-based patterns) |
-| PostgreSQL driver | `github.com/jackc/pgx/v5` |
+| HTTP server & routing | `net/http` (stdlib, pola berbasis method) |
+| Driver PostgreSQL | `github.com/jackc/pgx/v5` |
 | WebSocket | `github.com/coder/websocket` |
-| Config (env only) | `github.com/spf13/viper` |
+| Konfigurasi (env saja) | `github.com/spf13/viper` |
 | Logging | `log/slog` (stdlib) |
 | Testing | `testing` (stdlib) |
-| OpenAPI spec generation (build-time CLI) | `github.com/swaggo/swag/v2` |
-| Swagger UI serving | `github.com/swaggo/http-swagger/v2` |
+| Generasi spec OpenAPI (CLI build-time) | `github.com/swaggo/swag/v2` |
+| Penyajian Swagger UI | `github.com/swaggo/http-swagger/v2` |
 
-## Configuration
+## Konfigurasi
 
-Configuration is read from the environment (or a local `.env` file at the repo root).
-Copy `.env.example` to `.env` and adjust:
+Konfigurasi dibaca dari environment (atau file `.env` lokal di root repo). Salin
+`.env.example` menjadi `.env` lalu sesuaikan:
 
-| Variable | Default | Notes |
+| Variabel | Default | Catatan |
 |---|---|---|
-| `DB_DSN` | — | PostgreSQL DSN. **Required** — the app fails fast at startup if unset. |
-| `API_KEY` | — | **Admin** key, sent as `X-API-Key`. **Required** — the app fails fast if unset. Broker keys are per-participant and live in the database, not here. |
-| `HTTP_PORT` | `8080` | HTTP server port |
+| `DB_DSN` | — | DSN PostgreSQL. **Wajib** — aplikasi langsung gagal saat startup bila kosong. |
+| `API_KEY` | — | Key **admin**, dikirim sebagai `X-API-Key`. **Wajib** — aplikasi langsung gagal bila kosong. Key broker bersifat per-partisipan dan tersimpan di database, bukan di sini. |
+| `HTTP_PORT` | `8080` | Port HTTP server |
 | `LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error` |
-| `DISABLE_DOCS` | `false` | Set `true` to unregister `/docs` and `/openapi.yaml` |
+| `DISABLE_DOCS` | `false` | Set `true` untuk menonaktifkan `/docs` dan `/openapi.yaml` |
 
-Variable names are **not** prefixed — the same spelling works in the shell, in `.env`, and
-in `docker-compose.yml`.
+Nama variabel **tidak** diberi prefix — ejaan yang sama berlaku di shell, di `.env`, dan di
+`docker-compose.yml`.
 
-Example `DB_DSN`: `postgres://postgres:postgres@localhost:5432/jast?sslmode=disable`
+Contoh `DB_DSN`: `postgres://postgres:postgres@localhost:5432/jast?sslmode=disable`
 
-## Getting started
+## Memulai
 
 ```bash
-# 1. Configure
-cp .env.example .env      # then edit DB_DSN and API_KEY (both required)
+# 1. Konfigurasi
+cp .env.example .env      # lalu isi DB_DSN dan API_KEY (keduanya wajib)
 
-# 2. Create schema + seed data (idempotent — safe to re-run)
+# 2. Buat skema + data seed (idempoten — aman dijalankan ulang)
 go run ./cmd/migrate
 
-# 3. Start the server
-go run .                  # listens on :8080
+# 3. Jalankan server
+go run .                  # listen di :8080
 ```
 
-> Use `go run .` (compiles the whole package), **not** `go run main.go`.
+> Gunakan `go run .` (mengompilasi seluruh package), **bukan** `go run main.go`.
 
-The migration runner and the server both locate `.env` and `migrations/` by searching
-upward from the working directory, so they work from any subdirectory.
+Runner migrasi dan server sama-sama mencari `.env` dan `migrations/` dengan menelusuri ke
+atas dari working directory, sehingga keduanya bisa dijalankan dari subdirektori mana pun.
 
-### Using Docker
+### Menggunakan Docker
 
-You can easily spin up the entire application—including the PostgreSQL database, automatic migrations, and the API server—using Docker Compose:
+Seluruh aplikasi — termasuk database PostgreSQL, migrasi otomatis, dan API server — bisa
+dijalankan dengan mudah lewat Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
-The Docker setup is configured so that the **database** and **app** start automatically.
+Setup Docker sudah dikonfigurasi agar **database** dan **app** berjalan otomatis.
 
-To run the database migrations manually using Docker, run this command:
+Untuk menjalankan migrasi database secara manual lewat Docker:
 ```bash
 docker compose run --rm migrate
 ```
 
 ## API
 
-Interactive documentation: **http://localhost:8080/docs** (Swagger UI).
-Raw spec: **http://localhost:8080/openapi.yaml**.
+Dokumentasi interaktif: **http://localhost:8080/docs** (Swagger UI).
+Spec mentah: **http://localhost:8080/openapi.yaml**.
 
-The spec is **generated from the code** by [swag](https://github.com/swaggo/swag) — see
-[Documentation](#documentation). Only the two documentation routes are unauthenticated.
+Spec **digenerate dari kode** oleh [swag](https://github.com/swaggo/swag) — lihat bagian
+[Dokumentasi](#dokumentasi). Hanya dua route dokumentasi tersebut yang tidak memerlukan
+autentikasi.
 
-### Two authentication tiers
+### Dua tingkat autentikasi
 
-| Tier | Header | Credential | Routes |
+| Tingkat | Header | Kredensial | Route |
 |---|---|---|---|
-| **Admin** | `X-API-Key` | `API_KEY` from config | `/api/admin/*`, `/ws/admin/*` |
-| **Participant** | `X-Participant-Key` | Per-broker key, stored hashed in the database | `/api/participant/*`, `/ws/participant/*` |
+| **Admin** | `X-API-Key` | `API_KEY` dari konfigurasi | `/api/admin/*`, `/ws/admin/*` |
+| **Partisipan** | `X-Participant-Key` | Key per broker, disimpan ter-hash di database | `/api/participant/*`, `/ws/participant/*` |
 
-The tiers never mix: an admin key on a participant route is a 401, and vice versa.
+Kedua tingkat tidak pernah bercampur: key admin pada route partisipan menghasilkan 401, dan
+sebaliknya.
 
-Broker keys are **SHA-256 hashed**; only the hash and a short non-secret prefix are stored.
-A key is returned exactly twice in the API's lifetime — when the broker is created, and when
-the key is re-issued. **It cannot be retrieved afterwards**, because a hash does not reverse.
-A lost key is replaced, not recovered. `GET /api/admin/participants` therefore shows
-`api_key_prefix` and `has_api_key`, never the key.
+Key broker di-**hash SHA-256**; hanya hash dan prefix pendek non-rahasia yang disimpan. Sebuah
+key hanya dikembalikan tepat dua kali sepanjang hidup API — saat broker dibuat, dan saat key
+diterbitkan ulang. **Setelah itu tidak bisa diambil lagi**, karena hash tidak bisa dibalik. Key
+yang hilang diganti, bukan dipulihkan. Karena itu `GET /api/admin/participants` hanya
+menampilkan `api_key_prefix` dan `has_api_key`, tidak pernah key-nya.
 
-Because authentication reads the database on every request, revocation takes effect on the
-very next call rather than after a cache expires.
+Karena autentikasi membaca database pada setiap request, pencabutan key langsung berlaku pada
+panggilan berikutnya, bukan menunggu cache kedaluwarsa.
 
-> **Order attribution is client-asserted.** `POST /api/participant/orders` still takes
-> `participant` in the body and trusts it, so an authenticated broker can submit an order —
-> and move share holdings — under another broker's code. The key proves the caller is *a*
-> known broker, not *which* one. This is a deliberate decision, recorded here so it is
-> visible; the authenticated identity is logged alongside the asserted one on every submit.
+> **Atribusi order ditentukan oleh klien.** `POST /api/participant/orders` tetap menerima
+> `participant` di body dan mempercayainya, sehingga broker yang terautentikasi bisa mengirim
+> order — dan memindahkan kepemilikan saham — atas nama kode broker lain. Key membuktikan
+> bahwa pemanggil adalah *salah satu* broker yang dikenal, bukan *broker yang mana*. Ini
+> keputusan yang disengaja, dicatat di sini agar terlihat; identitas terautentikasi tetap
+> di-log berdampingan dengan identitas yang diklaim pada setiap submit.
 
-### Onboarding a broker
+### Onboarding broker
 
 ```bash
-# Create a broker; the key comes back once and only once.
+# Buat broker; key dikembalikan sekali dan hanya sekali.
 curl -X POST localhost:8080/api/admin/participants \
   -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
   -d '{"kode":"BB","nama":"Broker B"}'
 # -> {"kode":"BB","nama":"Broker B","api_key":"jast_BB_9xQ2m..."}
 
-# Re-issue (invalidates the old key) or revoke. The target travels in the body, never the
-# path, so no identifier lands in access logs.
+# Terbitkan ulang (membatalkan key lama) atau cabut. Target dikirim lewat body, tidak pernah
+# lewat path, sehingga tidak ada identifier yang tercatat di access log.
 curl -X POST   localhost:8080/api/admin/participants/apikey \
   -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' -d '{"participant":"BB"}'
 curl -X DELETE localhost:8080/api/admin/participants/apikey \
   -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' -d '{"participant":"BB"}'
 ```
 
-### Participant routes
+### Route partisipan
 
-| Route | Purpose |
+| Route | Kegunaan |
 |---|---|
-| `POST /api/participant/orders` | Submit an order |
-| `GET /api/participant/orderbook` | Every book, paginated |
-| `GET /api/participant/orderbook/{kode}` | One book, aggregated by price level |
-| `GET /api/participant/assets` | Own share holdings, with market value |
-| `GET /api/participant/transactions` | Own fill history |
-| `GET /api/participant/emiten/{kode}` | Instrument detail: price, free float, market cap |
-| `GET /api/participant/emiten/{kode}/prices` | Price history, raw executions |
-| `GET /api/participant/emiten/{kode}/candles` | Price history, OHLC (`1m`, `5m`, `1h`, `1d`) |
-| `GET /ws/participant/orderbook/{kode}` | Book stream (WebSocket) |
+| `POST /api/participant/orders` | Kirim order |
+| `GET /api/participant/orderbook` | Semua book, dengan paginasi |
+| `GET /api/participant/orderbook/{kode}` | Satu book, diagregasi per level harga |
+| `GET /api/participant/assets` | Kepemilikan saham sendiri, beserta nilai pasar |
+| `GET /api/participant/transactions` | Riwayat fill sendiri |
+| `GET /api/participant/emiten/{kode}` | Detail instrumen: harga, free float, kapitalisasi pasar |
+| `GET /api/participant/emiten/{kode}/prices` | Riwayat harga, eksekusi mentah |
+| `GET /api/participant/emiten/{kode}/candles` | Riwayat harga, OHLC (`1m`, `5m`, `1h`, `1d`) |
+| `GET /ws/participant/orderbook/{kode}` | Stream book (WebSocket) |
 
 ```bash
 curl -X POST localhost:8080/api/participant/orders \
@@ -254,147 +259,203 @@ curl -X POST localhost:8080/api/participant/orders \
 }
 ```
 
-`assets` and `transactions` scope to the caller **from the key** and accept no `participant`
-parameter, so one broker cannot read another's positions or fills.
+`assets` dan `transactions` dibatasi ke pemanggil **berdasarkan key** dan tidak menerima
+parameter `participant`, sehingga satu broker tidak bisa membaca posisi atau fill milik broker
+lain.
 
-### Admin routes
+### Route admin
 
-| Route | Purpose |
+| Route | Kegunaan |
 |---|---|
-| `GET`/`POST /api/admin/participants` | List or create brokers |
-| `POST`/`DELETE /api/admin/participants/apikey` | Issue or revoke a broker key |
-| `GET`/`POST /api/admin/emiten` | List or list-a-new instrument |
-| `GET /api/admin/orders` | Order history |
-| `GET /api/admin/trades` | Execution log |
-| `GET /api/admin/transactions` | Any broker's fill history (`?participant=`) |
-| `GET /api/admin/assets` | Holdings across brokers |
-| `GET /ws/admin/orderbook/{kode}` | Book stream (WebSocket) |
+| `GET`/`POST /api/admin/participants` | Daftar atau buat broker |
+| `POST`/`DELETE /api/admin/participants/apikey` | Terbitkan atau cabut key broker |
+| `GET`/`POST /api/admin/emiten` | Daftar instrumen atau catatkan instrumen baru |
+| `GET /api/admin/orders` | Riwayat order |
+| `GET /api/admin/trades` | Log eksekusi |
+| `GET /api/admin/transactions` | Riwayat fill broker mana pun (`?participant=`) |
+| `GET /api/admin/assets` | Kepemilikan lintas broker |
+| `GET /ws/admin/orderbook/{kode}` | Stream book (WebSocket) |
 
-A newly created emiten is **tradeable immediately** — it is registered with an empty book in
-the live registry, with no restart.
+Emiten yang baru dibuat **langsung bisa diperdagangkan** — ia didaftarkan dengan book kosong
+di registry yang sedang berjalan, tanpa perlu restart.
 
 ### WebSocket
 
-Outbound-only. On connect the server sends a full snapshot, then a fresh snapshot each time
-the book changes. Orders are **never** accepted over WebSocket. Both tiers receive the
-identical payload from the same controller; only the credential differs.
+Hanya satu arah (outbound). Saat terkoneksi, server mengirim snapshot penuh, lalu snapshot
+baru setiap kali book berubah. Order **tidak pernah** diterima lewat WebSocket. Kedua tingkat
+menerima payload identik dari controller yang sama; hanya kredensialnya yang berbeda.
 
 ```
 ws://localhost:8080/ws/participant/orderbook/BBCA
 ws://localhost:8080/ws/admin/orderbook/BBCA
 ```
 
-Neither is under `/api`.
+Keduanya tidak berada di bawah `/api`.
 
-## Matching rules
+## Aturan matching
 
-- A **buy** matches the cheapest ask when `buy_price >= ask_price`.
-- A **sell** matches the highest bid when `sell_price <= bid_price`.
-- **Execution price is the passive (resting) order's price**, not the incoming order's.
-- On each match, `qty = min(remaining_incoming, remaining_passive)`; a fully consumed
-  passive order leaves the book as `filled`.
-- A **limit** order with leftover quantity rests in the book (`open`).
-- A **market** order has no price limit, never rests in the book, and any unfillable
-  remainder is `cancelled`.
+- Order **beli** cocok dengan ask termurah bila `harga_beli >= harga_ask`.
+- Order **jual** cocok dengan bid tertinggi bila `harga_jual <= harga_bid`.
+- **Harga eksekusi adalah harga order pasif (yang sudah antre)**, bukan harga order yang masuk.
+- Pada setiap match, `qty = min(sisa_order_masuk, sisa_order_pasif)`; order pasif yang habis
+  terpakai keluar dari book dengan status `filled`.
+- Order **limit** dengan sisa kuantitas akan mengantre di book (`open`).
+- Order **market** tidak punya batas harga, tidak pernah mengantre di book, dan sisa yang tidak
+  terisi akan berstatus `cancelled`.
 
-`Seq` is the time-priority key: monotonic, never reused. It is issued by a single shared
-sequencer, seeded at startup from the highest values already in the database, so it stays
-unique across emiten and across restarts.
+`Seq` adalah kunci prioritas waktu: monoton dan tidak pernah dipakai ulang. Nilainya diterbitkan
+oleh satu sequencer bersama, di-seed saat startup dari nilai tertinggi yang sudah ada di
+database, sehingga tetap unik lintas emiten dan lintas restart.
 
-## Share holdings
+## Kepemilikan saham
 
-`broker_assets_list` records what each broker holds of each emiten. It is written **inside the
-same transaction as the match that moves it**, so a position can never disagree with the
-trades behind it.
+`broker_assets_list` mencatat jumlah saham tiap emiten yang dipegang setiap broker. Tabel ini
+ditulis **di dalam transaksi yang sama dengan match yang memindahkannya**, sehingga posisi tidak
+mungkin berbeda dengan transaksi yang mendasarinya.
 
-A sell is rejected before matching if the broker cannot cover it. Availability is
-`holdings − reserved`, where *reserved* is the quantity already committed to that broker's
-resting sell orders — without that, a broker holding 100 could rest two sells of 100 each
-(both passing a naive balance check) and go negative when both filled, violating
-`CHECK (amount_shared >= 0)` at commit, *after* matching had already moved the book.
+Order jual ditolak sebelum matching bila broker tidak punya saham yang cukup. Ketersediaan
+dihitung sebagai `kepemilikan − reserved`, di mana *reserved* adalah kuantitas yang sudah
+dikomitkan ke order jual broker tersebut yang masih mengantre — tanpa itu, broker dengan 100
+lembar bisa mengantrekan dua order jual masing-masing 100 (keduanya lolos pengecekan saldo
+naif) lalu menjadi negatif saat keduanya terisi, melanggar `CHECK (amount_shared >= 0)` saat
+commit, *setelah* matching terlanjur mengubah book.
 
-Both figures live in the market kernel under the **same mutex as matching**, so the check and
-the commitment it authorises are one atomic step. Holdings are seeded from the database at
-startup; reservations start empty, which is consistent with the book itself starting empty.
+Kedua angka tersebut berada di kernel market di bawah **mutex yang sama dengan matching**,
+sehingga pengecekan dan komitmen yang diizinkannya menjadi satu langkah atomik. Kepemilikan
+di-seed dari database saat startup; reservasi dimulai kosong, konsisten dengan book yang juga
+dimulai kosong.
 
-**Market value is derived, never stored.** `value = last_traded_price × shares`, computed on
-read for both holdings and emiten market cap. A stored column would need updating for *every*
-holder of an instrument on *every* trade in it — or it would silently go stale for every
-broker that did not trade. It is `null`, not `0`, for an instrument that has never traded.
+**Nilai pasar bersifat turunan, tidak pernah disimpan.** `nilai = harga_transaksi_terakhir ×
+jumlah_lembar`, dihitung saat dibaca, baik untuk kepemilikan maupun kapitalisasi pasar emiten.
+Kolom tersimpan harus diperbarui untuk *setiap* pemegang instrumen pada *setiap* transaksi
+instrumen tersebut — atau ia diam-diam menjadi usang bagi setiap broker yang tidak
+bertransaksi. Nilainya `null`, bukan `0`, untuk instrumen yang belum pernah bertransaksi.
 
-> The in-memory book is the source of truth for matching. The `orders` table is history /
-> audit; on restart the book starts empty (book recovery is not implemented).
+> Book di memori adalah sumber kebenaran untuk matching. Tabel `orders` berperan sebagai
+> riwayat/audit; saat restart book dimulai kosong (pemulihan book belum diimplementasikan).
 
-## Concurrency
+## Konkurensi
 
-All matching is serialized: only one goroutine touches the order books at a time, so
-matching is sequential and deterministic and price-time priority is never violated. There
-is no per-order locking and no parallel matching.
+Seluruh matching diserialisasi: hanya satu goroutine yang menyentuh order book pada satu waktu,
+sehingga matching berjalan sekuensial dan deterministik dan prioritas harga-waktu tidak pernah
+dilanggar. Tidak ada locking per order dan tidak ada matching paralel.
 
-The lock lives inside `market.Registry` and is private to it. Every operation that touches
-a book is a method on the Registry, so no caller can forget to take it — `Submit` matches
-and snapshots under a single acquisition, which is also what guarantees the book state
-returned to a caller is exactly the book that produced its trades.
+Lock berada di dalam `market.Registry` dan bersifat privat. Setiap operasi yang menyentuh book
+adalah method pada Registry, sehingga tidak ada pemanggil yang bisa lupa mengambilnya —
+`Submit` melakukan matching dan snapshot dalam satu kali akuisisi, yang juga menjamin bahwa
+state book yang dikembalikan ke pemanggil persis book yang menghasilkan transaksinya.
 
-## Development
+## Pengembangan
 
 ```bash
-make test          # all tests
-make test-engine   # engine tests only (no DB required) — the critical gate
+make test          # semua test
+make test-engine   # test engine saja (tanpa DB) — gerbang paling krusial
 make vet
 make build
 make run           # go run .
 make migrate       # go run ./cmd/migrate
 make check         # vet + build + test
-make docs          # regenerate the OpenAPI spec (= go run ./cmd/gendocs)
+make docs          # regenerate spec OpenAPI (= go run ./cmd/gendocs)
 ```
 
-There is no `make` on some Windows setups; every target above has a plain `go` equivalent,
-and doc generation is `go run ./cmd/gendocs`.
+Sebagian setup Windows tidak memiliki `make`; setiap target di atas punya padanan `go` biasa,
+dan generasi dokumentasi cukup dengan `go run ./cmd/gendocs`.
 
-The engine test suite (`go test ./engine/...`) covers ordered insert,
-simple/partial/multi-level matching, market orders, time-priority tie-breaks, and the
-reference validation scenario — all in memory, no database needed.
+Suite test engine (`go test ./engine/...`) mencakup insert terurut, matching
+sederhana/parsial/multi-level, order market, tie-break prioritas waktu, dan skenario validasi
+acuan — semuanya di memori, tanpa perlu database.
 
-### Documentation
+### Dokumentasi
 
-Nothing about the docs is written by hand. `platform/docs/swagger.yaml` and `swagger.json`
-are **generated** from the annotation comments on `main.go` (general API info) and on the
-controller methods, plus the struct tags on the DTOs. The UI is the real Swagger UI shipped
-by `swaggo/files` — there is no hand-maintained HTML page and no CDN.
+Tidak ada bagian dokumentasi yang ditulis tangan. `platform/docs/swagger.yaml` dan
+`swagger.json` **digenerate** dari komentar anotasi pada `main.go` (info umum API) dan pada
+method controller, ditambah struct tag pada DTO. UI-nya adalah Swagger UI asli yang dikirim
+oleh `swaggo/files` — tidak ada halaman HTML yang dipelihara manual dan tidak ada CDN.
 
 ```bash
-# once: install the swag CLI (pinned; v2 is still a release candidate)
+# sekali saja: install CLI swag (dipin; v2 masih release candidate)
 go install github.com/swaggo/swag/v2/cmd/swag@v2.0.0-rc5
 
-# after changing a route, a DTO, or an annotation
+# setelah mengubah route, DTO, atau anotasi
 go run ./cmd/gendocs
 ```
 
-Commit the regenerated files: the binary embeds `swagger.yaml` with `go:embed`, so the
-Docker build never needs the swag binary. Generation uses `--ot yaml,json`, which skips
-`docs.go` — swag itself is a build-time tool only.
+Commit file hasil regenerate: binary meng-embed `swagger.yaml` dengan `go:embed`, sehingga
+build Docker tidak pernah membutuhkan binary swag. Generasi menggunakan `--ot yaml,json`, yang
+melewati `docs.go` — swag sendiri hanya alat build-time.
 
-Three details worth knowing before changing this setup:
+Tiga hal yang perlu diketahui sebelum mengubah setup ini:
 
-- **The spec is served as OpenAPI 3.0.3.** swag emits only Swagger 2.0 or OpenAPI 3.1 —
-  there is no 3.0 option — but the Swagger UI bundled with `swaggo/files` cannot render
-  3.1 (*"does not specify a valid version field"*). The generated document uses no
-  3.1-only construct, so `cmd/gendocs` retags it to 3.0.3, and **fails loudly** if swag
-  ever starts emitting one rather than shipping a spec that misstates its own version.
-- **Generation is a Go program, not a Makefile recipe.** `cmd/gendocs` runs anywhere a Go
-  toolchain does — no `make`, `bash`, or `sed` needed, which matters on Windows.
-- **Swagger UI is pointed at `/openapi.yaml`, not at swag's registered `doc.json`.**
-  `http-swagger` reads that registry through swag **v1**, while the spec is produced by
-  swag **v2** — separate registries, so the UI would fail to load the definition. Serving
-  the embedded document ourselves avoids the mismatch.
+- **Spec disajikan sebagai OpenAPI 3.0.3.** swag hanya menghasilkan Swagger 2.0 atau OpenAPI
+  3.1 — tidak ada opsi 3.0 — sementara Swagger UI yang dibundel `swaggo/files` tidak bisa
+  merender 3.1 (*"does not specify a valid version field"*). Dokumen hasil generate tidak
+  memakai konstruk khusus 3.1, jadi `cmd/gendocs` menandainya ulang sebagai 3.0.3, dan
+  **gagal dengan lantang** bila suatu saat swag mulai memakai konstruk tersebut, alih-alih
+  mengirim spec yang salah menyebut versinya sendiri.
+- **Generasi berupa program Go, bukan resep Makefile.** `cmd/gendocs` berjalan di mana pun
+  toolchain Go tersedia — tanpa `make`, `bash`, atau `sed`, yang penting di Windows.
+- **Swagger UI diarahkan ke `/openapi.yaml`, bukan ke `doc.json` yang diregistrasikan swag.**
+  `http-swagger` membaca registry itu lewat swag **v1**, sedangkan spec dihasilkan oleh swag
+  **v2** — registry-nya berbeda, sehingga UI akan gagal memuat definisinya. Menyajikan
+  dokumen yang di-embed sendiri menghindari ketidakcocokan tersebut.
 
-## Data derived from trades
+## Bagaimana sebuah harga terbentuk
 
-Once trades exist, two things follow as derivations (not separate features):
+Tidak ada kolom "harga saat ini" yang tersimpan. Harga muncul dalam tiga tahap, dan tiap tahap
+adalah hal yang berbeda:
 
-- **Stock price** = aggregation of the `trades` table. Last price = latest trade price;
-  OHLC = aggregation per time interval.
-- **Index (IHSG)** = market-cap-weighted from stock prices
-  (`market_cap = last_price × listed_shares`). The initial version omits free-float and
-  divisor adjustments.
+1. **Harga order** — ditentukan oleh broker. Order limit membawa batas atas/bawah harganya
+   sendiri; order market membawa `0`, artinya "berapa pun yang diberikan book".
+2. **Harga eksekusi** — ditentukan oleh matching engine: selalu harga order *pasif* (yang sudah
+   mengantre), tidak pernah harga order agresor yang masuk. Itulah imbalan bagi yang lebih dulu
+   menyediakan likuiditas, dan itulah sebabnya order beli limit 1250 terhadap ask yang mengantre
+   di 1200 tereksekusi pada 1200.
+3. **Harga acuan** — nilai yang dipakai untuk *menilai* instrumen:
+   `harga transaksi terakhir, atau ipo_price sampai instrumen pertama kali bertransaksi`
+   (`market.Emiten.ReferencePrice`). Tidak pernah disimpan, karena satu transaksi saja akan
+   membatalkan nilai tersimpan bagi setiap pemegang instrumen tersebut.
+
+Harga IPO menutup celah yang jika tidak akan menjadi lingkaran setan: instrumen yang baru
+dicatatkan belum punya transaksi, sehingga tanpa harga IPO `current_price`, kapitalisasi pasar,
+dan nilai pasar setiap kepemilikan menjadi null, dan broker pertama yang ingin mengutipnya tidak
+punya patokan apa pun. Ini lubang yang sama yang ditutup IDX dengan menjadikan harga penawaran
+sebagai previous close pada hari pencatatan.
+
+Keduanya dilaporkan terpisah, bukan digabung. `current_price` (beserta `highest`/`lowest`) tetap
+murni berasal dari transaksi dan tetap null sampai pasar benar-benar bersuara; `reference_price`
+adalah masukan untuk penilaian, dan `price_source` (`trade` | `ipo`) menyatakan berasal dari
+mana nilainya — sehingga klien tidak perlu menebak apakah suatu kapitalisasi pasar mencerminkan
+perdagangan nyata.
+
+## Data turunan dari transaksi
+
+Setelah transaksi ada, dua hal mengikuti sebagai turunan (bukan fitur terpisah):
+
+- **Harga saham** = agregasi tabel `trades`. Harga terakhir = harga transaksi terbaru; OHLC =
+  agregasi per interval waktu.
+- **Indeks (IHSG)** = tertimbang kapitalisasi pasar dari harga-harga saham
+  (`market_cap = reference_price × listed_shares`). Versi awal belum memperhitungkan free-float
+  dan penyesuaian divisor.
+
+## Pasar perdana: penjamin emisi dan IPO
+
+Penjamin emisi (*underwriter*) adalah entitas tersendiri, bukan sekadar flag pada `participant`
+— menjamin sebuah penawaran dan berdagang di bursa adalah peran yang berbeda. Meski begitu, ia
+tetap menunjuk ke sebuah partisipan, karena saham hanya bermakna bagi pemegang yang bisa
+memperdagangkannya: `broker_assets_list`, wallet, dan ledger engine semuanya berkunci pada
+partisipan.
+
+Ada dua jenis, dan perbedaannya ditegakkan, bukan sekadar formalitas:
+
+- `utama` — penjamin utama yang menjamin penawaran. Tepat satu per penawaran, dan porsinya
+  harus yang **terbesar**.
+- `pendukung` — anggota sindikasi pendukung, mengambil porsi lebih kecil. Jumlahnya bebas.
+
+`POST /api/admin/ipo` mencatatkan instrumen sekaligus membagikan sahamnya dalam satu request,
+karena instrumen yang sahamnya tidak berada di tangan siapa pun belum bisa disebut penawaran.
+Total porsi harus **persis** sama dengan `listed_shares`: kurang berarti ada saham yang tidak
+dipegang siapa pun, lebih berarti memunculkan saham yang tidak pernah diterbitkan. Alokasi
+berjalan dalam satu transaksi — baris audit `ipo_allocation` dan kredit `broker_assets_list`
+bergerak bersama atau tidak sama sekali — dan ledger di memori baru dikredit setelah penulisan
+itu berhasil, sebab jika tidak, order jual pertama para penjamin emisi akan ditolak karena
+saham dianggap tidak cukup meski database menyatakan sebaliknya.
