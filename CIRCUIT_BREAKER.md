@@ -1,25 +1,45 @@
 # Circuit Breaker — Catatan Kerja
 
-Status per **31 Juli 2026**: parameter selesai, penegakan belum ada.
+Status per **3 Agustus 2026**: auto-rejection dan breaker per-emiten **aktif**.
+Breaker index belum.
 
 Dokumen ini mencatat apa yang sudah dibangun, apa yang belum, dan keputusan
-desain yang harus diambil sebelum melanjutkan. Ditulis supaya pekerjaan ini bisa
-dilanjutkan tanpa harus membangun ulang konteksnya dari nol.
+desain yang sudah diambil. Ditulis supaya pekerjaan ini bisa dilanjutkan tanpa
+harus membangun ulang konteksnya dari nol.
 
 ---
 
 ## Ringkas: di mana posisi sekarang
 
-Konfigurasi circuit breaker sudah lengkap dan bisa diubah lewat
-`PUT /api/admin/config`. Nilainya tersimpan, tervalidasi, dan bertahan setelah
-restart.
+Dua lapisan sudah jalan penuh, dari konfigurasi sampai penegakan:
 
-**Tetapi belum ada satu baris pun yang membacanya untuk menghentikan
-perdagangan.** `marketconfig.Service.Halt()` ada dan mengembalikan kebijakan yang
-berlaku, tapi tidak ada pemanggilnya. `engine.Submit` masih menerima setiap
-order tanpa mengecek status apa pun.
+- **Auto-rejection (ARA/ARB).** Order limit di luar `reference_price ± 30%`
+  ditolak 400 dan tidak pernah masuk buku.
+- **Circuit breaker per-emiten.** Trade yang tercetak di tepi band menghentikan
+  emiten itu selama 2 menit. Halt berakhir sendiri, bertahan melewati restart.
 
-Jadi: rem sudah terpasang di dashboard, kabelnya belum tersambung ke roda.
+Yang **belum** ada: breaker index 12%. Parameternya tersimpan dan tervalidasi,
+tapi belum ada yang membacanya — persis seperti posisi seluruh fitur ini
+sebelumnya.
+
+### Kasus yang memicu pekerjaan ini
+
+Harga meloncat 190 → 1000 tanpa hambatan. Sekarang tertutup dua kali:
+
+```
+Acuan 190, band 133..247
+
+Order @1000  -> 400 "price 1000 is outside the permitted range 133-247 (reference 190)"
+Order @247   -> diterima, trade tercetak
+                -> breaker menyala, halt sampai +2 menit
+Order @200   -> 400 "trading in AAAA is halted until 2026-08-03T09:02:00Z"
+(2 menit kemudian, tanpa request apa pun)
+Order @200   -> diterima
+```
+
+Diuji di `market/breaker_test.go`, termasuk skenario band berjalan — order
+bertahap 190→240→300 tetap ditolak di langkah ketiga karena acuannya tidak ikut
+bergerak.
 
 ---
 
@@ -35,6 +55,22 @@ Jadi: rem sudah terpasang di dashboard, kabelnya belum tersambung ke roda.
 | `marketconfig/controller.go` | Anotasi swagger |
 | `repository/marketconfig.go` | Load dan save kolom baru |
 | `marketconfig/service_test.go` | Test — package ini sebelumnya tanpa test sama sekali |
+
+**Penegakan** (tahap kedua):
+
+| Berkas | Isi |
+|---|---|
+| `migrations/017_reference_price.sql` | Kolom `emiten.reference_price`, tabel `trading_halt` |
+| `market/band.go` | `Band` — aritmetika bps, `Allows` vs `AtLimit` |
+| `market/registry.go` | State halt di `book`, cek band di `Submit`, `ExpireHalts` |
+| `market/directory.go` | Field `Emiten.SessionReference` |
+| `breaker/breaker.go` | `Supervisor` — persist halt, sweep yang mengakhirinya |
+| `repository/halt.go` | Simpan/hapus/pulihkan halt, set reference price |
+| `repository/emiten.go` | Load + set `reference_price` saat aktivasi |
+| `order/service.go` | Terjemahan error ke 400 beserta rentang dan waktu resume |
+| `marketconfig/cache.go` | Adapter `BreakerPolicy` |
+| `main.go` | Wiring, pemulihan halt saat startup, goroutine sweep |
+| `market/band_test.go`, `market/breaker_test.go` | Test |
 
 Nilai default sesuai kebijakan bursa ini: emiten **30%** (3000 bps), index
 **12%** (1200 bps), durasi halt **2 menit** (120 detik). Ketiganya sudah jadi
@@ -68,94 +104,102 @@ Batas bawah dan atas ada karena alasan yang berbeda, dan keduanya penting:
 
 ---
 
-## Yang belum ada
+## Keputusan desain yang sudah diambil
 
-Diurutkan berdasarkan ketergantungan — yang di bawah butuh yang di atas.
+**Acuan band dibekukan per sesi, bukan mengikuti harga terakhir.** Ini yang
+paling penting dipahami sebelum mengubah apa pun di sini. Kalau band diukur dari
+harga transaksi terakhir, batas 30% membuat 190 mengizinkan 247, yang mengizinkan
+321, yang mengizinkan 417 — tiap langkah sah, dan harga sampai 1000 tanpa satu
+pun penolakan. Band harus diam supaya yang dibatasi adalah pergerakan kumulatif,
+bukan pergerakan per-order.
 
-### 1. Harga acuan per emiten — **prasyarat segalanya**
+Karena itu ada dua hal berbeda dengan nama mirip, dan keduanya sengaja dibiarkan
+terpisah:
 
-Pertanyaan "30% dari apa?" belum punya jawaban di sistem ini. Belum ada
-`reference_price` pada emiten, dan belum ada yang menyimpan *previous close*
-setelah sesi berakhir.
+- `market.Emiten.ReferencePrice(lastTrade)` — **valuasi.** Bergerak tiap
+  transaksi. Dipakai untuk menilai portofolio.
+- `market.Emiten.SessionReference` / kolom `emiten.reference_price` — **jangkar
+  band.** Diam sepanjang sesi.
 
-Migration 010 sudah menyimpan harga IPO, dan itu acuan yang benar untuk hari
-pertama sebuah emiten diperdagangkan. Tetapi mulai hari kedua acuannya harus
-harga penutupan sebelumnya, dan tidak ada apa pun yang mencatatnya sekarang.
+**Tepi band bersifat inklusif, dan `Allows` ≠ `AtLimit`.** Order tepat di
+ceiling **diterima dan tereksekusi**; yang terjadi kemudian adalah breaker
+menyala. Kalau tepi dibuat menolak, ceiling jadi harga yang tak pernah bisa
+tercetak, dan breaker yang menyala saat menyentuhnya tidak akan pernah menyala.
+Dua predikat ini beda dan tidak boleh disatukan.
 
-Ini juga prasyarat ARA/ARB, jadi mengerjakannya membuka dua hal sekaligus.
-Karena itu ini yang paling layak dikerjakan lebih dulu.
+**Halt berakhir berdasarkan jam, bukan berdasarkan timer yang menghapus state.**
+`book.halted()` membandingkan deadline dengan waktu sekarang tiap kali dibaca,
+jadi emiten terbuka persis saat deadline lewat — terlepas dari apakah sweep sudah
+jalan. Sweep hanya mengurus efek samping: hapus baris database dan broadcast.
 
-**Perlu diputuskan:** apa acuan untuk emiten yang tidak diperdagangkan sama
-sekali sepanjang sesi? Penutupan sesi terakhir yang ada transaksinya, atau acuan
-kemarin dibawa maju apa adanya. Keduanya wajar; yang penting dipilih sadar,
-bukan muncul sebagai efek samping dari query.
+**Sweep adalah satu poll, bukan satu timer per halt.** Ini konsekuensi langsung
+dari model konkurensi di `market/registry.go`: satu mutex mengunci semua buku
+supaya matching sekuensial dan deterministik. Goroutine per halt akan membuka
+buku dari thread mana pun yang kebetulan dijadwalkan runtime — persis race yang
+model itu ada untuk mencegahnya.
 
-### 2. State halt di engine
+**Buku dibekukan, bukan dikosongkan.** Order yang sudah beristirahat tetap ada
+beserta prioritas waktunya; hanya order baru yang ditolak.
 
-Halt itu **status**, bukan validasi. Bedanya penting: validasi menolak satu
-order dan pasar tetap jalan; status menghentikan seluruh instrumen untuk semua
-orang.
+**Halt bertahan melewati restart.** Tabel `trading_halt` dipulihkan saat startup,
+dan halt yang deadline-nya sudah lewat selama proses mati **tidak** dipulihkan —
+kalau tidak, halt bisa hidup lebih lama dari durasinya hanya karena servernya
+sempat mati.
 
-`engine.Engine` sekarang tidak punya konsep status sama sekali — `Submit` selalu
-mencoba mencocokkan. Perlu ditambahkan status di tingkat emiten (`Active` /
-`Halted` / `Suspended`) dan `Submit` harus bisa menolak.
-
-Yang perlu diperhatikan saat mengerjakan: buku order **dibekukan, bukan
-dikosongkan**. Order yang sudah beristirahat di buku tetap ada dan tetap
-memegang prioritas waktunya; yang ditolak hanya order baru yang masuk. Mengosongkan
-buku saat halt akan menghapus prioritas waktu yang justru sedang dilindungi.
-
-Deteksi pemicunya diletakkan setelah transaksi tercetak, bukan saat order masuk —
-breaker diukur terhadap transaksi yang benar-benar terjadi, bukan terhadap niat.
-`SubmitAtomic` sudah mengembalikan daftar `Trade`, jadi titik sambungnya ada di
-sana.
-
-### 3. Komponen berbasis waktu — **perubahan arsitektural**
-
-Halt 2 menit harus berakhir dengan sendirinya. Sistem ini sekarang murni
-event-driven: tidak ada satu pun komponen yang berjalan berdasarkan jam.
-Menambahkannya bukan sekadar fitur, tapi menambah sumbu baru pada arsitektur.
-
-Perhatikan catatan konkurensi di `engine/matching.go`: pola yang dimaksud adalah
-satu channel → satu goroutine → semua order book, supaya matching sekuensial dan
-deterministik. Berakhirnya halt **harus masuk lewat jalur yang sama**. Timer yang
-membuka buku langsung dari goroutine-nya sendiri akan merusak jaminan itu, dan
-kerusakannya berupa race yang muncul sesekali — jenis bug yang paling mahal
-dilacak di sistem seperti ini.
-
-### 4. Breaker index (12%)
-
-Butuh nilai pembukaan index yang di-snapshot setiap awal sesi sebagai
-pembanding. Package `index/` masih baru; snapshot ini belum ada.
-
-Secara arsitektur ini yang paling rumit, karena satu peristiwa harus
-menghentikan **semua** engine serentak dan lintas modul. Kerjakan paling akhir,
-setelah pola halt per-emiten terbukti jalan.
-
-Catatan: breaker index di BEI **hanya satu arah — turun**. Naik ekstrem tidak
-menghentikan pasar; euforia beli sudah direm ARA per-saham. Aturan BEI aslinya
-berjenjang (5% → 10% → 15%), sedangkan sistem ini memakai satu ambang 12%.
-Itu keputusan yang disengaja, bukan penyederhanaan yang terlupa.
+**`ErrEmitenHalted` ≠ `ErrEmitenInactive`.** Inactive itu status administratif
+yang diatur operator; halt itu otomatis, sementara, dan berakhir sendiri. Klien
+yang kena halt harus mencoba lagi nanti; yang kena inactive tidak.
 
 ---
 
-## Keputusan yang harus diambil sebelum menyentuh kode
+## Yang belum ada
 
-**Saat halt 2 menit berakhir, buku dibuka bagaimana?**
+### Breaker index (12%)
 
-Dua pilihan:
+Parameternya tersimpan dan tervalidasi (`index_halt_bps`), tapi belum ada yang
+membacanya.
 
-- **Langsung dibuka.** Sederhana, tapi order yang menumpuk selama halt langsung
-  saling bertabrakan pada tick pertama — persis ledakan harga yang membuat
-  breaker menyala tadi.
-- **Lewat call auction.** Kumpulkan order selama halt, hitung satu harga
-  pembukaan yang memaksimalkan volume tereksekusi, lalu buka. Ini yang dipakai
-  bursa sungguhan, dan alasannya justru masalah di atas.
+Butuh nilai pembukaan index yang di-snapshot tiap awal sesi sebagai pembanding —
+package `index/` belum menyimpannya. Secara arsitektur ini yang paling rumit,
+karena satu peristiwa harus menghentikan **semua** emiten serentak. Pola
+per-emiten sudah terbukti jalan, jadi bentuknya bisa mengikuti: `Registry` butuh
+sesuatu seperti `HaltAll(until)`, dan `index.Notifier` — yang sudah dipanggil
+tiap kali harga bergerak — jadi titik deteksinya.
 
-Call auction butuh mode pencocokan kedua di engine yang berdampingan dengan
-continuous matching yang ada sekarang. **Jauh lebih mahal kalau baru dipikirkan
-setelah state halt terlanjur dibangun** — karena itu keputusan ini didahulukan,
-bukan ditunda.
+Catatan: breaker index di BEI **hanya satu arah — turun**. Naik ekstrem tidak
+menghentikan pasar; euforia beli sudah direm ARA per-saham. Aturan BEI aslinya
+berjenjang (5% → 10% → 15%), sedangkan sistem ini memakai satu ambang 12%. Itu
+keputusan yang disengaja, bukan penyederhanaan yang terlupa.
+
+### Roll harga acuan antar sesi
+
+Ini **celah yang paling perlu ditutup berikutnya.** `reference_price` sekarang
+hanya diisi saat aktivasi emiten (dari harga IPO) dan tidak pernah diperbarui
+sesudahnya. Artinya band selamanya diukur dari harga IPO, bukan dari penutupan
+kemarin.
+
+Yang dibutuhkan: satu job di batas sesi yang menyetel `reference_price` ke harga
+penutupan sesi tersebut. `repository.Halt.SetReferencePrice` dan
+`Registry.SetReference` sudah ada — tinggal ada yang memanggilnya.
+
+**Perlu diputuskan:** apa acuan untuk emiten yang tidak diperdagangkan sama
+sekali sepanjang sesi? Penutupan sesi terakhir yang ada transaksinya, atau acuan
+kemarin dibawa maju apa adanya. Keduanya wajar; yang penting dipilih sadar, bukan
+muncul sebagai efek samping dari query.
+
+### Endpoint admin untuk halt manual
+
+`Registry.HaltUntil` dan `Registry.Resume` sudah ada dan bisa dipakai operator
+untuk menghentikan atau membuka emiten dengan tangan, tapi belum ada route yang
+mengeksposnya.
+
+### Call auction saat pembukaan kembali
+
+Sesuai keputusan, buku dibuka langsung setelah halt berakhir. Konsekuensinya
+diterima secara sadar: order yang menumpuk selama halt saling bertabrakan pada
+tick pertama. Kalau nanti ini jadi masalah nyata, call auction adalah jawabannya
+— dan itu berarti mode pencocokan kedua di engine, berdampingan dengan continuous
+matching.
 
 ---
 
@@ -167,13 +211,15 @@ paling sempit:
 1. **Tick size / fraksi harga** — harga harus kelipatan tertentu (BEI:
    Rp1/2/5/10/25 tergantung rentang harga). Sudah ada `MinPrice` sebagai lantai,
    tapi aturan kelipatan belum ada.
-2. **ARA/ARB** — batas ±% dari harga acuan. Preventif, per-order, pasar tetap
-   buka. Butuh prasyarat yang sama dengan breaker emiten (bagian 1 di atas).
+2. ~~**ARA/ARB**~~ — **sudah ada.** Satu ambang 30% dua arah, bukan berjenjang
+   per rentang harga seperti BEI aslinya (35%/25%/20%). Penyederhanaan yang
+   disengaja.
 3. **Dynamic price collar** — batas ±% dari *harga transaksi terakhir*, bukan
-   dari previous close. Menangkap *fat finger* dan flash crash intraday yang
-   lolos dari ARA karena pergerakannya bertahap. Murah dibangun setelah ARA/ARB
-   ada, karena engine sudah tahu harga transaksi terakhir. **Rasio manfaat
-   terhadap usaha paling tinggi di daftar ini.**
+   dari acuan sesi. Menangkap *fat finger* dan flash crash intraday yang lolos
+   dari ARA karena pergerakannya bertahap dan masih dalam band. Sekarang murah
+   dibangun: `market.Band` sudah ada, tinggal band kedua yang dianchor ke harga
+   terakhir dan dicek berdampingan dengan yang pertama. **Rasio manfaat terhadap
+   usaha paling tinggi di daftar ini.**
 4. **Random closing** — waktu penutupan diacak beberapa detik supaya tidak bisa
    dimanipulasi di detik terakhir.
 
@@ -181,10 +227,9 @@ paling sempit:
 
 ## Urutan yang disarankan
 
-1. Putuskan pertanyaan call auction di atas.
-2. Harga acuan per emiten (membuka ARA/ARB **dan** breaker emiten sekaligus).
-3. ARA/ARB — preventif, tidak butuh state, hasil cepat terlihat.
-4. State halt per-emiten di engine.
-5. Komponen berbasis waktu untuk mengakhiri halt.
-6. Dynamic collar.
-7. Snapshot pembukaan index, lalu breaker market-wide.
+1. **Roll harga acuan antar sesi.** Paling mendesak — tanpa ini band selamanya
+   terpatok di harga IPO, dan seluruh lapisan yang sudah dibangun mengukur dari
+   angka yang salah begitu emiten diperdagangkan lebih dari satu hari.
+2. Endpoint admin untuk halt/resume manual.
+3. Snapshot pembukaan index, lalu breaker market-wide 12%.
+4. Dynamic collar (lihat daftar lapisan di bawah).

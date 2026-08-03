@@ -24,20 +24,30 @@ func NewUnderwriter(pool *pgxpool.Pool) *Underwriter {
 
 var _ underwriter.Repository = (*Underwriter)(nil)
 
-// ListUnderwriters returns every registered underwriter, ordered by code.
+// ListUnderwriters returns every registered underwriter, ordered by broker code.
+//
+// The join is for the ordering only: an underwriter has no code of its own, and
+// ordering by participant_id would sort by insertion order rather than by anything
+// a reader recognises. The code and name themselves are resolved from the
+// in-memory directory by the transformer, not carried on the row.
 func (r *Underwriter) ListUnderwriters(ctx context.Context) ([]underwriter.Record, error) {
 	return postgres.QueryAll(ctx, r.pool, "underwriters",
-		`SELECT id, kode, nama, jenis, participant_id, is_active
-		 FROM underwriter ORDER BY kode`,
+		`SELECT u.id, u.participant_id, u.is_active
+		 FROM underwriter u
+		 JOIN participant p ON p.id = u.participant_id
+		 ORDER BY p.kode`,
 		scanUnderwriter)
 }
 
-// UnderwriterByKode looks up one underwriter, returning underwriter.ErrNotFound
-// when the code is not registered so the service can answer 400 rather than 500.
-func (r *Underwriter) UnderwriterByKode(ctx context.Context, kode string) (underwriter.Record, error) {
+// UnderwriterByParticipant looks up one underwriter by its broker code, returning
+// underwriter.ErrNotFound when that broker is not registered as one — so the
+// service can answer 400 rather than 500.
+func (r *Underwriter) UnderwriterByParticipant(ctx context.Context, kode string) (underwriter.Record, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, kode, nama, jenis, participant_id, is_active
-		 FROM underwriter WHERE kode = $1`, kode)
+		`SELECT u.id, u.participant_id, u.is_active
+		 FROM underwriter u
+		 JOIN participant p ON p.id = u.participant_id
+		 WHERE p.kode = $1`, kode)
 	if err != nil {
 		return underwriter.Record{}, fmt.Errorf("repository: underwriter %s: %w", kode, err)
 	}
@@ -59,26 +69,30 @@ func (r *Underwriter) UnderwriterByKode(ctx context.Context, kode string) (under
 
 func scanUnderwriter(rows pgx.Rows) (underwriter.Record, error) {
 	var rec underwriter.Record
-	err := rows.Scan(&rec.ID, &rec.Kode, &rec.Nama, &rec.Jenis, &rec.ParticipantID, &rec.IsActive)
+	err := rows.Scan(&rec.ID, &rec.ParticipantID, &rec.IsActive)
 	return rec, err
 }
 
-// CreateUnderwriter inserts a new underwriter and returns it with its assigned id.
+// CreateUnderwriter registers a broker as an underwriter and returns the record
+// with its assigned id.
 //
-// A duplicate kode surfaces as ErrDuplicate rather than a raw driver error, so the
-// controller can answer 409 instead of 500.
+// Registering the same broker twice violates the unique index on participant_id
+// and surfaces as ErrDuplicate rather than a raw driver error, so the controller
+// can answer 409 instead of 500.
 func (r *Underwriter) CreateUnderwriter(ctx context.Context, u underwriter.Record) (underwriter.Record, error) {
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO underwriter (kode, nama, jenis, participant_id, is_active)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO underwriter (participant_id, is_active)
+		VALUES ($1, $2)
 		RETURNING id`,
-		u.Kode, u.Nama, u.Jenis, u.ParticipantID, u.IsActive,
+		u.ParticipantID, u.IsActive,
 	).Scan(&u.ID)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return underwriter.Record{}, fmt.Errorf("%w: underwriter %s", ErrDuplicate, u.Kode)
+			return underwriter.Record{}, fmt.Errorf("%w: underwriter for participant %d",
+				ErrDuplicate, u.ParticipantID)
 		}
-		return underwriter.Record{}, fmt.Errorf("repository: insert underwriter %s: %w", u.Kode, err)
+		return underwriter.Record{}, fmt.Errorf("repository: insert underwriter for participant %d: %w",
+			u.ParticipantID, err)
 	}
 	return u, nil
 }
@@ -111,9 +125,9 @@ func (r *Underwriter) AllocateIPO(ctx context.Context, emitenID, price int64, al
 	for _, a := range allocs {
 		batch.Queue(`
 			INSERT INTO ipo_allocation
-			    (emiten_id, underwriter_id, participant_id, jenis, shares, price)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
-			emitenID, a.UnderwriterID, a.ParticipantID, a.Jenis, a.Shares, price)
+			    (emiten_id, underwriter_id, participant_id, shares, price)
+			VALUES ($1, $2, $3, $4, $5)`,
+			emitenID, a.UnderwriterID, a.ParticipantID, a.Shares, price)
 
 		batch.Queue(`
 			INSERT INTO broker_assets_list (participant_id, emiten_id, amount_shared)
@@ -141,20 +155,22 @@ func (r *Underwriter) AllocateIPO(ctx context.Context, emitenID, price int64, al
 	return nil
 }
 
-// AllocationsByEmiten returns an offering's syndicate, lead first and then the
-// supporters largest-first — the order the syndicate is actually structured in.
+// AllocationsByEmiten returns an offering's syndicate, largest tranche first —
+// the order the syndicate is actually weighted in. Ties break on the broker code
+// so the ordering is total, and the same offering always reads back identically.
+//
+// It joins participant only: the underwriter row carries no name, and the shares
+// were credited to the participant anyway.
 func (r *Underwriter) AllocationsByEmiten(ctx context.Context, emitenID int64) ([]underwriter.AllocationRecord, error) {
 	return postgres.QueryAll(ctx, r.pool, "ipo allocations",
-		`SELECT u.kode, u.nama, p.kode, a.jenis, a.shares, a.price
+		`SELECT p.kode, p.nama, a.shares, a.price
 		 FROM ipo_allocation a
-		 JOIN underwriter u ON u.id = a.underwriter_id
-		 JOIN participant  p ON p.id = a.participant_id
+		 JOIN participant p ON p.id = a.participant_id
 		 WHERE a.emiten_id = $1
-		 ORDER BY (a.jenis = 'utama') DESC, a.shares DESC, u.kode`,
+		 ORDER BY a.shares DESC, p.kode`,
 		func(rows pgx.Rows) (underwriter.AllocationRecord, error) {
 			var rec underwriter.AllocationRecord
-			err := rows.Scan(&rec.UnderwriterKode, &rec.UnderwriterNama, &rec.ParticipantKode,
-				&rec.Jenis, &rec.Shares, &rec.Price)
+			err := rows.Scan(&rec.ParticipantKode, &rec.ParticipantNama, &rec.Shares, &rec.Price)
 			return rec, err
 		}, emitenID)
 }

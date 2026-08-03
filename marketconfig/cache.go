@@ -77,6 +77,23 @@ func (c *Cache) Halt() HaltPolicy {
 	}
 }
 
+// EmitenBandBPS returns the single-emiten band threshold in basis points, and
+// HaltDuration how long a triggered halt lasts. Together they satisfy the
+// BreakerPolicy interface the market registry declares, so the registry reads
+// live configuration without importing this package.
+func (c *Cache) EmitenBandBPS() int64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.settings.EmitenHaltBPS
+}
+
+// HaltDuration returns how long a triggered halt lasts.
+func (c *Cache) HaltDuration() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.settings.HaltDuration
+}
+
 // Set replaces the cached configuration. Called at startup with what the
 // database holds, and after every committed update.
 func (c *Cache) Set(s Settings) {

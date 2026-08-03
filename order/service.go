@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"bekasi-automatic-trading-system/engine"
 	"bekasi-automatic-trading-system/market"
@@ -174,6 +175,28 @@ func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error)
 			return Result{}, invalid("insufficient balance to buy %d %s", cmd.Qty, cmd.Emiten)
 		case errors.Is(err, market.ErrEmitenInactive):
 			return Result{}, invalid("emiten is not active: %s", cmd.Emiten)
+		case errors.Is(err, market.ErrEmitenHalted):
+			// Reported with the resume time, because the halt is temporary and
+			// the client's next question is always when it ends. Read after the
+			// rejection rather than carried out of it: the registry's lock is
+			// already released, and the deadline cannot have moved — a halt is
+			// never shortened by anything but an operator.
+			if h, herr := s.reg.Halt(em.ID); herr == nil && h.Halted {
+				return Result{}, invalid(
+					"trading in %s is halted until %s",
+					cmd.Emiten, h.ResumesAt.UTC().Format(time.RFC3339))
+			}
+			return Result{}, invalid("trading in %s is halted", cmd.Emiten)
+		case errors.Is(err, market.ErrOutsideBand):
+			// Auto-rejection. The band is quoted in the message rather than just
+			// named, so a broker can correct the order without a second call to
+			// discover what the limits were.
+			if band, ok := s.reg.Band(em.ID); ok {
+				return Result{}, invalid(
+					"price %d is outside the permitted range %d-%d (reference %d)",
+					price, band.Floor, band.Ceiling, band.Reference)
+			}
+			return Result{}, invalid("price %d is outside the permitted range", price)
 		}
 		// persist's own error is already wrapped with "order: save execution:",
 		// so it is returned as-is rather than wrapped again as a match failure.
@@ -192,6 +215,83 @@ func (s *Service) Submit(ctx context.Context, cmd SubmitCommand) (Result, error)
 	}
 
 	return Result{Order: o, Trades: trades}, nil
+}
+
+// CancelCommand is a request to withdraw a resting order. The participant is
+// the broker asking, and must be the one that placed it.
+type CancelCommand struct {
+	Emiten      string
+	Participant string
+	OrderID     int64
+}
+
+// Cancel withdraws a resting order, releasing the shares or cash it reserved.
+//
+// The shape mirrors Submit and for the same reasons: the database write runs
+// inside the registry's lock through a callback, so the row and the book are
+// cancelled together or neither is, and submitMu is held across the whole
+// sequence so a cancel and a matching pass cannot interleave. Without that
+// lock, an order could be cancelled in memory while a submission already
+// matching against it commits a trade for the quantity just released.
+//
+// Only the owning broker may cancel, enforced by the registry, which is the
+// only layer that can see who a resting order belongs to.
+func (s *Service) Cancel(ctx context.Context, cmd CancelCommand) (Result, error) {
+	em, ok := s.dir.Emiten(cmd.Emiten)
+	if !ok {
+		return Result{}, invalid("unknown emiten: %s", cmd.Emiten)
+	}
+	part, ok := s.dir.Participant(cmd.Participant)
+	if !ok {
+		return Result{}, invalid("unknown participant: %s", cmd.Participant)
+	}
+	if cmd.OrderID <= 0 {
+		return Result{}, invalid("order_id must be > 0")
+	}
+
+	s.submitMu.Lock()
+	defer s.submitMu.Unlock()
+
+	// errFilledMeanwhile marks the one failure that is the client's fault rather
+	// than the database's: the row was no longer open, because a matching pass
+	// filled it between this cancel reading the book and the update running. It
+	// is a sentinel rather than a ValidationError so it survives the registry's
+	// unwind path unchanged and can be told apart from a genuine write failure.
+	var errFilledMeanwhile = errors.New("order: no longer open")
+
+	persist := func(o *engine.Order) error {
+		updated, err := s.repo.CancelOrder(ctx, o.ID)
+		if err != nil {
+			return fmt.Errorf("order: cancel: %w", err)
+		}
+		if !updated {
+			return errFilledMeanwhile
+		}
+		return nil
+	}
+
+	res, err := s.reg.Cancel(em.ID, cmd.OrderID, part.ID, persist)
+	if err != nil {
+		switch {
+		case errors.Is(err, errFilledMeanwhile):
+			return Result{}, invalid("order %d is no longer open", cmd.OrderID)
+		case errors.Is(err, market.ErrOrderNotFound):
+			return Result{}, invalid("order %d is not resting in %s", cmd.OrderID, cmd.Emiten)
+		case errors.Is(err, market.ErrNotOrderOwner):
+			return Result{}, invalid("order %d belongs to another participant", cmd.OrderID)
+		case errors.Is(err, market.ErrUnknownEmiten):
+			return Result{}, invalid("unknown emiten: %s", cmd.Emiten)
+		}
+		return Result{}, err
+	}
+
+	// The book lost a price level's worth of depth, so subscribers are told —
+	// after the cancel has committed, never before.
+	s.hub.Broadcast(em.ID, res.State)
+
+	// No trades: a cancel moves no price, so derived market data is untouched
+	// and the trade observer is deliberately not notified.
+	return Result{Order: res.Order}, nil
 }
 
 // History returns one page of order history, newest first, optionally filtered by

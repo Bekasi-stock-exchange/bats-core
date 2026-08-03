@@ -52,6 +52,8 @@ import (
 	"time"
 
 	"bekasi-automatic-trading-system/assets"
+	"bekasi-automatic-trading-system/breaker"
+	"bekasi-automatic-trading-system/corporateaction"
 	"bekasi-automatic-trading-system/emiten"
 	"bekasi-automatic-trading-system/engine"
 	"bekasi-automatic-trading-system/index"
@@ -116,7 +118,9 @@ func runServer() error {
 		participant:  repository.NewParticipant(pool),
 		trade:        trades,
 		underwriter:  repository.NewUnderwriter(pool),
+		corporate:    repository.NewCorporateAction(pool),
 		config:       repository.NewMarketConfig(pool),
+		halt:         repository.NewHalt(pool),
 		index:        indexes,
 		indexPrices:  indexes,
 		emitenWriter: master,
@@ -140,17 +144,51 @@ func runServer() error {
 		return err
 	}
 
+	// The circuit breaker. The supervisor records a halt when one trips and ends
+	// it when its time is up; the registry enforces both the price band and the
+	// halt itself, reading the live configuration through the cache.
+	//
+	// Wired after the config load, because a breaker reading the built-in default
+	// instead of the operator's threshold would halt on the wrong move.
+	haltSupervisor := breaker.NewSupervisor(kernel.reg, repos.halt, kernel.hub, slog.Default())
+	kernel.reg.WithBreaker(configCache, haltSupervisor)
+
+	// Halts that were still running when the process last stopped. Without this a
+	// restart reopens a halted instrument early — at exactly the moment an
+	// operator is least likely to be watching. Rows whose deadline has already
+	// passed are dropped rather than restored, so a halt never outlives its
+	// duration just because the process was down for it.
+	if _, err := repos.halt.PurgeExpiredHalts(ctx); err != nil {
+		return err
+	}
+	activeHalts, err := repos.halt.LoadActiveHalts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, h := range activeHalts {
+		kernel.reg.HaltUntil(h.EmitenID, h.ResumesAt)
+		slog.Info("restored trading halt", "emiten_id", h.EmitenID, "resumes_at", h.ResumesAt)
+	}
+
+	// The sweep that ends halts. WithoutCancel so a shutdown signal does not stop
+	// it before the drain finishes — matching how the index notifier is run.
+	go haltSupervisor.Run(context.WithoutCancel(ctx))
+
 	// Services.
 	orderSvc := order.NewService(kernel.dir, kernel.reg, kernel.hub, repos.order, configCache)
 	bookSvc := orderbook.NewService(kernel.dir, kernel.reg, kernel.hub)
 	partSvc := participant.NewService(repos.participant, kernel.dir)
 	emitenSvc := emiten.NewService(kernel.dir, kernel.reg, repos.emitenWriter, repos.prices)
 	assetSvc := assets.NewService(kernel.dir, repos.asset)
-	walletSvc := wallet.NewService(kernel.dir, repos.wallet)
+	walletSvc := wallet.NewService(kernel.dir, kernel.reg, repos.wallet)
 	tradeSvc := trade.NewService(kernel.dir, repos.trade)
 	// The underwriter domain drives emitenSvc for the listing half of an IPO, so it
 	// is constructed after it.
 	underwriterSvc := underwriter.NewService(repos.underwriter, emitenSvc, kernel.dir, kernel.reg)
+	// Corporate actions drive emitenSvc too, for the share-count restatement a
+	// split or bonus performs, so they are constructed after it for the same
+	// reason.
+	corporateSvc := corporateaction.NewService(repos.corporate, emitenSvc, kernel.dir, kernel.reg)
 
 	// The composite index, loaded before the server accepts a request so the first
 	// read reports a real level rather than a 503. Load also bootstraps the divisor
@@ -190,6 +228,7 @@ func runServer() error {
 		Emiten:      emiten.NewController(emitenSvc, repository.IsDuplicate),
 		Index:       index.NewController(indexSvc),
 		Underwriter: underwriter.NewController(underwriterSvc, underwriter.NewCodes(kernel.dir), repository.IsDuplicate),
+		Corporate:   corporateaction.NewController(corporateSvc, corporateaction.NewCodes(kernel.dir)),
 		Config:      marketconfig.NewController(configSvc),
 		Assets:      assets.NewController(assetSvc, assets.NewCodes(kernel.dir)),
 		Wallet:      wallet.NewController(walletSvc, wallet.NewCodes(kernel.dir)),
@@ -249,7 +288,14 @@ type repositories struct {
 	participant participant.Repository
 	trade       trade.Repository
 	underwriter underwriter.Repository
+	corporate   corporateaction.Repository
 	config      marketconfig.Repository
+
+	// halt persists trading halts and the per-emiten reference price the band is
+	// measured from, so both survive a restart. Concrete rather than an interface
+	// because startup reads it directly (restoring live halts) as well as handing
+	// it to the breaker supervisor as a breaker.Store.
+	halt *repository.Halt
 
 	// index and indexPrices are both satisfied by the index repository: one owns
 	// the stored definition and its history, the other the market-wide price read

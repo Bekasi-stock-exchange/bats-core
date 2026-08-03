@@ -11,6 +11,10 @@ const (
 )
 
 // CreateRequest is the body of POST /api/admin/emiten.
+//
+// It carries no offering price. The instrument is registered dormant and is priced
+// when its offering runs — see emiten.Service.Activate — so a price here would be
+// a number with nothing to attach it to.
 type CreateRequest struct {
 	// Instrument code, unique across the exchange.
 	Kode string `json:"kode" example:"BBNI" validate:"required"`
@@ -20,9 +24,6 @@ type CreateRequest struct {
 	ListedShares int64 `json:"listed_shares" format:"int64" example:"18462169893" validate:"required"`
 	// Restricted shares not available for trading. Defaults to 0.
 	UnlistedShares int64 `json:"unlisted_shares" format:"int64" example:"0"`
-	// Offering price. Must be > 0: it is the instrument's reference price until it
-	// first trades, and without it a new listing has no price to quote against.
-	IPOPrice int64 `json:"ipo_price" format:"int64" example:"1000" validate:"required"`
 }
 
 // EmitenView is a listed instrument's master data, as returned by the admin list.

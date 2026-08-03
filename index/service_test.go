@@ -341,6 +341,27 @@ func TestCaptureRecordsTheComputedLevel(t *testing.T) {
 	}
 }
 
+func TestCaptureTwiceAppendsTwoPoints(t *testing.T) {
+	// The admin capture endpoint can be called at will, and the periodic capture
+	// keeps running alongside it. Each call must append rather than overwrite, or
+	// a manually marked moment would replace the automatic series.
+	emitens := []market.Emiten{{ID: 1, Kode: "AAAA", ListedShares: 1000, IsActive: true}}
+
+	svc, repo, _ := fixture(t, emitens, map[int64]int64{1: 100}, 10)
+	if err := svc.Recompute(context.Background()); err != nil {
+		t.Fatalf("Recompute: %v", err)
+	}
+
+	for i := range 2 {
+		if err := svc.Capture(context.Background()); err != nil {
+			t.Fatalf("Capture %d: %v", i, err)
+		}
+	}
+	if len(repo.snapshots) != 2 {
+		t.Errorf("snapshots = %d, want 2", len(repo.snapshots))
+	}
+}
+
 func TestCaptureBeforeComputationStoresNothing(t *testing.T) {
 	svc, repo, _ := fixture(t, nil, nil, 1)
 

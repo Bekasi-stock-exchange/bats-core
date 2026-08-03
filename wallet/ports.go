@@ -26,4 +26,5 @@ type Repository interface {
 	ListWallets(ctx context.Context, participantID *int64, limit, offset int) ([]Record, error)
 	CountWallets(ctx context.Context, participantID *int64) (int, error)
 	FindWallet(ctx context.Context, participantID int64) (Record, error)
+	AdjustWallet(ctx context.Context, participantID, delta int64) (Record, error)
 }

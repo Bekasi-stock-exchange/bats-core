@@ -14,21 +14,25 @@
 -- every file in filename order on each run.
 
 -- ----------------------------------------------------------- underwriter
--- jenis: 'utama' is the lead underwriter, 'pendukung' a supporting syndicate
--- member. Constrained rather than free text so a typo cannot silently create a
--- third kind.
+-- An underwriter carries no code or name of its own: it *is* a participant that
+-- may underwrite, and that participant already has both. Storing a second copy
+-- would be two sources of truth for one firm's identity.
+--
+-- This table originally had kode, nama and a utama/pendukung jenis column.
+-- Migration 016 drops all three; they are simply never created here, so a fresh
+-- database and a migrated one end up with the same table. 016 still exists for
+-- databases that were created before it.
 CREATE TABLE IF NOT EXISTS underwriter (
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    kode           varchar(10)  NOT NULL UNIQUE,
-    nama           varchar(255) NOT NULL,
-    jenis          varchar(20)  NOT NULL CHECK (jenis IN ('utama', 'pendukung')),
-    participant_id bigint       NOT NULL REFERENCES participant(id),
-    is_active      boolean      NOT NULL DEFAULT true,
-    created_at     timestamptz  NOT NULL DEFAULT now()
+    participant_id bigint      NOT NULL REFERENCES participant(id),
+    is_active      boolean     NOT NULL DEFAULT true,
+    created_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- Supports "which underwriters trade through this broker".
-CREATE INDEX IF NOT EXISTS idx_underwriter_participant ON underwriter (participant_id);
+-- One registration per broker: a firm either may underwrite or may not, and two
+-- rows would give one participant two identities in the same offering.
+CREATE UNIQUE INDEX IF NOT EXISTS underwriter_participant_key
+    ON underwriter (participant_id);
 
 -- ------------------------------------------------------- ipo allocation
 -- Who underwrote which listing, and for how many shares. This is the audit trail
@@ -36,15 +40,14 @@ CREATE INDEX IF NOT EXISTS idx_underwriter_participant ON underwriter (participa
 -- running balance, so without this table an IPO allocation becomes
 -- indistinguishable from an ordinary purchase the moment a second trade lands.
 --
--- The lead/support split is denormalized onto the row (jenis) because an
--- underwriter's role can differ per offering — lead on one listing, support on the
--- next — so it belongs to the allocation, not to the firm.
+-- The syndicate is flat: a tranche records who took how many shares at what
+-- price, and nothing about rank. This table originally carried a utama/pendukung
+-- jenis column, dropped by migration 016 and no longer created here.
 CREATE TABLE IF NOT EXISTS ipo_allocation (
     id             bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     emiten_id      bigint      NOT NULL REFERENCES emiten(id),
     underwriter_id bigint      NOT NULL REFERENCES underwriter(id),
     participant_id bigint      NOT NULL REFERENCES participant(id),
-    jenis          varchar(20) NOT NULL CHECK (jenis IN ('utama', 'pendukung')),
     shares         bigint      NOT NULL CHECK (shares > 0),
     price          bigint      NOT NULL CHECK (price > 0),
     created_at     timestamptz NOT NULL DEFAULT now(),
@@ -57,15 +60,21 @@ CREATE INDEX IF NOT EXISTS idx_ipo_allocation_emiten ON ipo_allocation (emiten_i
 
 -- ------------------------------------------------------------- dev seed
 -- Two underwriters over the existing brokers, so the IPO endpoint is exercisable
--- against a fresh database without hand-building a syndicate first. Guarded so
--- re-runs are non-destructive, and skipped entirely if no participant exists yet.
-INSERT INTO underwriter (kode, nama, jenis, participant_id)
-SELECT v.kode, v.nama, v.jenis, p.id
-FROM (VALUES
-    ('UW01', 'Danareksa Sekuritas',   'utama'),
-    ('UW02', 'Mandiri Sekuritas',     'pendukung')
-) AS v(kode, nama, jenis)
-CROSS JOIN LATERAL (
-    SELECT id FROM participant ORDER BY id LIMIT 1
-) p
-ON CONFLICT (kode) DO NOTHING;
+-- against a fresh database without hand-building a syndicate first. Skipped
+-- entirely if no participant exists yet.
+--
+-- Written against the *final* shape of this table, not the one created above:
+-- migration 016 drops kode, nama and jenis, and cmd/migrate re-applies every file
+-- on every run, so a seed naming those columns would fail on the second run once
+-- 016 had landed. Only participant_id is inserted, which is true of both shapes.
+--
+-- Two distinct brokers, because 016 also makes participant_id UNIQUE — one
+-- registration per firm. NOT EXISTS rather than ON CONFLICT for the same
+-- forward-compatibility reason: the unique index it would need to name does not
+-- exist yet at this point in the sequence.
+INSERT INTO underwriter (participant_id)
+SELECT p.id
+FROM (SELECT id FROM participant ORDER BY id LIMIT 2) p
+WHERE NOT EXISTS (
+    SELECT 1 FROM underwriter u WHERE u.participant_id = p.id
+);

@@ -53,6 +53,22 @@ type SubmitOrderResponse struct {
 	Trades []TradeView `json:"trades"`
 }
 
+// CancelOrderRequest is the body of POST /api/participant/orders/cancel.
+type CancelOrderRequest struct {
+	// Emiten (listed instrument) code the order was placed on.
+	Emiten string `json:"emiten" example:"BBCA" validate:"required"`
+	// Participant (broker) code. Must be the broker that placed the order.
+	Participant string `json:"participant" example:"YP" validate:"required"`
+	// Id of the resting order to withdraw.
+	OrderID int64 `json:"order_id" format:"int64" example:"3" minimum:"1" validate:"required"`
+}
+
+// CancelOrderResponse is the body of a successful cancellation: the order at
+// its final state, with the quantity that never filled.
+type CancelOrderResponse struct {
+	Order OrderView `json:"order"`
+}
+
 // OrderHistoryView is one order in the admin history.
 type OrderHistoryView struct {
 	ID          int64  `json:"id" format:"int64" example:"31"`

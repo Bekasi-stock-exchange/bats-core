@@ -1,24 +1,26 @@
 package underwriter
 
 // CreateRequest is the body of POST /api/admin/underwriters.
+//
+// One field, because registering an underwriter grants a permission to an
+// existing broker rather than creating a new firm. Its code and name are that
+// broker's already.
 type CreateRequest struct {
-	// Underwriter code, unique across the exchange.
-	Kode string `json:"kode" example:"UW03" validate:"required"`
-	// Firm name.
-	Nama string `json:"nama" example:"BNI Sekuritas" validate:"required"`
-	// Role: "utama" (lead) or "pendukung" (supporting).
-	Jenis string `json:"jenis" enums:"utama,pendukung" example:"utama" validate:"required"`
-	// Broker code this underwriter trades through. Allocated shares land in this
-	// participant's holdings, because only a participant can trade them.
+	// Broker code permitted to underwrite. Must be a registered participant.
+	// Allocated shares land in this participant's holdings, because only a
+	// participant can trade them.
 	Participant string `json:"participant" example:"YP" validate:"required"`
 }
 
 // UnderwriterView is an underwriter as returned by the admin listing.
+//
+// kode and nama are the participant's, joined on read — this is the same firm
+// under its trading identity, not a separate entity with a name of its own.
 type UnderwriterView struct {
-	Kode string `json:"kode" example:"UW01"`
-	Nama string `json:"nama" example:"Danareksa Sekuritas"`
-	// Role: "utama" (lead) or "pendukung" (supporting).
-	Jenis string `json:"jenis" enums:"utama,pendukung" example:"utama"`
+	// Broker code. Identical to participant; both are present so a client can
+	// key on kode like every other listing without knowing they are the same.
+	Kode string `json:"kode" example:"YP"`
+	Nama string `json:"nama" example:"Mirae Asset Sekuritas"`
 	// Broker code this underwriter trades through.
 	Participant string `json:"participant" example:"YP"`
 	IsActive    bool   `json:"is_active" example:"true"`
@@ -26,8 +28,8 @@ type UnderwriterView struct {
 
 // UnderwriterAllocation is one underwriter's tranche in an IPO request.
 type UnderwriterAllocation struct {
-	// Underwriter code taking this tranche.
-	Underwriter string `json:"underwriter" example:"UW01" validate:"required"`
+	// Broker code taking this tranche. Must be a registered underwriter.
+	Underwriter string `json:"underwriter" example:"YP" validate:"required"`
 	// Shares allocated. Must be > 0.
 	Shares int64 `json:"shares" format:"int64" example:"25000" validate:"required"`
 }
@@ -50,17 +52,35 @@ type IPORequest struct {
 	// Offering price per share. Must be > 0; becomes the instrument's reference
 	// price until it first trades.
 	IPOPrice int64 `json:"ipo_price" format:"int64" example:"1000" validate:"required"`
-	// The syndicate. At least one entry, exactly one of which must be "utama",
-	// and the lead's tranche must be the largest.
+	// The syndicate. At least one entry, and the tranches must sum to exactly
+	// listed_shares. Every member is on equal terms.
+	Underwriters []UnderwriterAllocation `json:"underwriters" validate:"required"`
+}
+
+// ExistingIPORequest is the body of POST /api/admin/emiten/{kode}/ipo: an offering
+// over an instrument that is already registered but not yet trading.
+//
+// It carries no kode, nama, listed_shares or unlisted_shares. The instrument
+// already exists and those are its own facts, fixed when it was registered — an
+// offering decides who underwrites it and at what price, not how many shares the
+// company has. Accepting them here would let an offering silently restate the
+// share count every valuation is derived from.
+type ExistingIPORequest struct {
+	// Offering price per share. Must be > 0; becomes the instrument's reference
+	// price until it first trades.
+	IPOPrice int64 `json:"ipo_price" format:"int64" example:"1000" validate:"required"`
+	// The syndicate. At least one entry, and the tranches must sum to exactly
+	// the instrument's existing listed_shares. Every member is on equal terms.
 	Underwriters []UnderwriterAllocation `json:"underwriters" validate:"required"`
 }
 
 // AllocationView is one underwriter's tranche as returned after an IPO.
 type AllocationView struct {
-	Underwriter string `json:"underwriter" example:"UW01"`
-	Nama        string `json:"nama" example:"Danareksa Sekuritas"`
-	// Role in this offering: "utama" or "pendukung".
-	Jenis string `json:"jenis" enums:"utama,pendukung" example:"utama"`
+	// Broker code that took this tranche. Identical to participant, since an
+	// underwriter is a participant; both are present so the field a client keys
+	// on does not depend on knowing that.
+	Underwriter string `json:"underwriter" example:"YP"`
+	Nama        string `json:"nama" example:"Mirae Asset Sekuritas"`
 	// Broker code the shares were credited to.
 	Participant string `json:"participant" example:"YP"`
 	// Shares allocated.

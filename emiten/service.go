@@ -29,6 +29,41 @@ func invalid(format string, args ...any) error {
 // Repository writes listed instruments.
 type Repository interface {
 	CreateEmiten(ctx context.Context, e market.Emiten) (market.Emiten, error)
+
+	// ActivateEmiten opens a dormant instrument for trading at its offering
+	// price, setting is_active and ipo_price together because they are one
+	// event: an instrument becomes tradeable *at* a price.
+	ActivateEmiten(ctx context.Context, emitenID, ipoPrice int64) error
+}
+
+// RestateShares updates an instrument's listed share count and band anchor after
+// a corporate action has already persisted them, bringing the live directory and
+// registry into agreement with the database.
+//
+// It writes nothing itself. The corporate action domain restates the emiten row
+// inside the same transaction that moves every holder's position — the two must
+// not be able to disagree — so by the time this is called the database is already
+// correct and only the in-memory copies are stale. Splitting it out this way is
+// what lets that domain own its transaction while this one owns the kernel state.
+//
+// Without it, the instrument keeps trading against its pre-split numbers: the
+// band would reject orders at the new fair value, and every valuation would use
+// the old share count.
+func (s *Service) RestateShares(ctx context.Context, emitenID, listedShares int64, reference *int64) error {
+	e, ok := s.dir.EmitenByID(emitenID)
+	if !ok {
+		return ErrNotFound
+	}
+
+	s.dir.RestateShares(e.Kode, listedShares, reference)
+
+	// The registry keeps its own copy of the anchor, read on the submit path under
+	// its lock; the directory alone would leave the band measuring from the
+	// pre-split price.
+	if reference != nil {
+		s.reg.SetReference(emitenID, *reference)
+	}
+	return nil
 }
 
 // ListingObserver is notified around a new listing, so market-wide statistics
@@ -102,11 +137,27 @@ func (s *Service) Detail(ctx context.Context, kode string) (market.Emiten, Price
 	return e, stats, nil
 }
 
-// Create lists a new instrument and makes it immediately tradeable.
+// Create registers a new instrument, dormant.
+//
+// It is deliberately *not* tradeable on return. A listing has two halves — the
+// instrument existing, and its shares being placed with the market — and only the
+// first happens here. An instrument whose shares sit nowhere has nobody who could
+// sell it and no offering price to quote against, so opening its book would
+// advertise a market that cannot trade. Activate does the second half, and is
+// reachable only through an IPO.
+//
+// No IPO price is set for the same reason: the offering price is decided when the
+// offering runs, not when the instrument is first registered.
 //
 // Order matters: the row is written first, because the database owns uniqueness
 // and a duplicate code must fail before any in-memory state moves. Registration
 // follows and cannot fail — it is two map inserts — so the two can never disagree.
+// The book is registered here despite being closed, so the instrument is readable
+// while dormant rather than 404-ing until its offering runs.
+//
+// The index is not notified: a dormant instrument has no reference price, so
+// index.marketCap skips it and the divisor needs no restating. It joins the index
+// when Activate gives it a price.
 func (s *Service) Create(ctx context.Context, req CreateRequest) (market.Emiten, error) {
 	kode := strings.TrimSpace(req.Kode)
 	nama := strings.TrimSpace(req.Nama)
@@ -120,31 +171,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (market.Emiten,
 		return market.Emiten{}, invalid("listed_shares must be > 0")
 	case req.UnlistedShares < 0:
 		return market.Emiten{}, invalid("unlisted_shares must be >= 0")
-	// Required for new listings, though the column is nullable: the five seeded
-	// instruments predate it and already have a trade history, so the database
-	// cannot demand it without inventing a price for them. Anything listed from
-	// here on must carry one, or it enters the exchange with nothing to quote
-	// against.
-	case req.IPOPrice <= 0:
-		return market.Emiten{}, invalid("ipo_price must be > 0")
 	}
 
-	// Captured before anything is written, because absorbing the listing needs the
-	// market's value as it stood without this instrument. Read here rather than
-	// after the row lands so it cannot already include it.
-	var capBefore int64
-	if s.listings != nil {
-		capBefore = s.listings.MarketCap(ctx)
-	}
-
-	ipoPrice := req.IPOPrice
 	e, err := s.repo.CreateEmiten(ctx, market.Emiten{
 		Kode:           kode,
 		Nama:           nama,
 		ListedShares:   req.ListedShares,
 		UnlistedShares: req.UnlistedShares,
-		IsActive:       true,
-		IPOPrice:       &ipoPrice,
+		IsActive:       false,
 	})
 	if err != nil {
 		return market.Emiten{}, err
@@ -152,9 +186,58 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (market.Emiten,
 
 	s.dir.AddEmiten(e)
 	s.reg.AddBook(e)
+	return e, nil
+}
 
-	// Announced after the instrument is registered, so the observer's own
-	// valuation already includes it.
+// Activate opens a dormant instrument for trading at its offering price.
+//
+// This is the second half of a listing, and the only way an instrument becomes
+// tradeable. It is called by the underwriter domain once an offering's shares have
+// been placed — never directly from an admin endpoint — because activating an
+// instrument whose shares sit nowhere is the state Create exists to avoid.
+//
+// It refuses an instrument that is already active. That check is what makes an
+// offering unrepeatable: a second IPO over a live instrument would issue its
+// shares twice, and the price it was listed at would stop being the price it was
+// listed at.
+//
+// Order mirrors Create: the row is written first because the database is the
+// record, and the in-memory state follows only once that succeeds. The directory
+// and the book are both updated — Submit reads the book's own copy of the flag, so
+// the directory alone would leave the instrument advertised as active while still
+// rejecting every order.
+func (s *Service) Activate(ctx context.Context, kode string, ipoPrice int64) (market.Emiten, error) {
+	e, ok := s.dir.Emiten(kode)
+	switch {
+	case !ok:
+		return market.Emiten{}, ErrNotFound
+	case e.IsActive:
+		return market.Emiten{}, invalid("emiten %s is already listed and trading", kode)
+	case ipoPrice <= 0:
+		return market.Emiten{}, invalid("ipo_price must be > 0")
+	}
+
+	// Captured before anything is written, because absorbing the listing needs the
+	// market's value as it stood without this instrument priced. Read here rather
+	// than after the row lands so it cannot already include it.
+	var capBefore int64
+	if s.listings != nil {
+		capBefore = s.listings.MarketCap(ctx)
+	}
+
+	if err := s.repo.ActivateEmiten(ctx, e.ID, ipoPrice); err != nil {
+		return market.Emiten{}, err
+	}
+
+	s.dir.ActivateEmiten(kode, ipoPrice)
+	s.reg.ActivateBook(e.ID)
+
+	e.IsActive = true
+	e.IPOPrice = &ipoPrice
+
+	// Announced after the instrument is priced and registered, so the observer's
+	// own valuation already includes it. This is the point the instrument enters
+	// the index: before it, marketCap skipped it for having no reference price.
 	//
 	// A failure here is logged and swallowed rather than returned: the instrument
 	// is listed, persisted, and tradeable by this point, and failing the request

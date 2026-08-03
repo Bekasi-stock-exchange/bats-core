@@ -48,15 +48,231 @@ components:
           format: int64
           type: integer
       type: object
-    emiten.CreateRequest:
+    corporateaction.ActionDetailView:
       properties:
-        ipo_price:
+        amount:
+          description: Rupiah per share, for a dividend. Absent otherwise.
+          example: 50
+          format: int64
+          type: integer
+        created_at:
+          example: "2026-08-03T09:00:00Z"
+          type: string
+        entries:
+          description: What each broker received. Empty for an action that has not
+            executed.
+          items:
+            $ref: '#/components/schemas/corporateaction.EntryView'
+          type: array
+          uniqueItems: false
+        executed_at:
+          example: "2026-08-10T09:00:00Z"
+          type: string
+        id:
+          example: 1
+          format: int64
+          type: integer
+        jenis:
+          enum:
+          - SPLIT
+          - REVERSE_SPLIT
+          - BONUS
+          - DIVIDEND
+          example: SPLIT
+          type: string
+        keterangan:
+          example: Stock split 1:2
+          type: string
+        kode:
+          description: Instrument code, resolved from the directory.
+          example: BBCA
+          type: string
+        listed_shares_after:
+          example: 80000
+          format: int64
+          type: integer
+        listed_shares_before:
           description: |-
-            Offering price. Must be > 0: it is the instrument's reference price until it
-            first trades, and without it a new listing has no price to quote against.
+            The instrument's listed shares before and after. Equal unless a share
+            action has executed.
+          example: 40000
+          format: int64
+          type: integer
+        nama:
+          example: PT Bank Central Asia Tbk
+          type: string
+        ratio:
+          description: Human-readable form of the same ratio, e.g. "1:2". Absent for
+            a dividend.
+          example: "1:2"
+          type: string
+        ratio_from:
+          description: The ratio, for a split, reverse split or bonus. Absent for
+            a dividend.
+          example: 1
+          format: int64
+          type: integer
+        ratio_to:
+          example: 2
+          format: int64
+          type: integer
+        record_date:
+          example: "2026-08-10"
+          type: string
+        status:
+          enum:
+          - ANNOUNCED
+          - EXECUTED
+          - CANCELLED
+          example: ANNOUNCED
+          type: string
+        total_cash:
+          description: Total rupiah paid out, for an executed dividend.
+          example: 2000000
+          format: int64
+          type: integer
+      type: object
+    corporateaction.ActionView:
+      properties:
+        amount:
+          description: Rupiah per share, for a dividend. Absent otherwise.
+          example: 50
+          format: int64
+          type: integer
+        created_at:
+          example: "2026-08-03T09:00:00Z"
+          type: string
+        executed_at:
+          example: "2026-08-10T09:00:00Z"
+          type: string
+        id:
+          example: 1
+          format: int64
+          type: integer
+        jenis:
+          enum:
+          - SPLIT
+          - REVERSE_SPLIT
+          - BONUS
+          - DIVIDEND
+          example: SPLIT
+          type: string
+        keterangan:
+          example: Stock split 1:2
+          type: string
+        kode:
+          description: Instrument code, resolved from the directory.
+          example: BBCA
+          type: string
+        nama:
+          example: PT Bank Central Asia Tbk
+          type: string
+        ratio:
+          description: Human-readable form of the same ratio, e.g. "1:2". Absent for
+            a dividend.
+          example: "1:2"
+          type: string
+        ratio_from:
+          description: The ratio, for a split, reverse split or bonus. Absent for
+            a dividend.
+          example: 1
+          format: int64
+          type: integer
+        ratio_to:
+          example: 2
+          format: int64
+          type: integer
+        record_date:
+          example: "2026-08-10"
+          type: string
+        status:
+          enum:
+          - ANNOUNCED
+          - EXECUTED
+          - CANCELLED
+          example: ANNOUNCED
+          type: string
+      type: object
+    corporateaction.AnnounceRequest:
+      properties:
+        amount:
+          description: Rupiah per share held. Required for DIVIDEND; must be omitted
+            otherwise.
+          example: 50
+          format: int64
+          type: integer
+        jenis:
+          description: One of SPLIT, REVERSE_SPLIT, BONUS, DIVIDEND.
+          enum:
+          - SPLIT
+          - REVERSE_SPLIT
+          - BONUS
+          - DIVIDEND
+          example: SPLIT
+          type: string
+        keterangan:
+          description: Free text for the announcement.
+          example: Stock split 1:2 untuk meningkatkan likuiditas
+          type: string
+        kode:
+          description: Instrument code the action is over. Must be listed and trading.
+          example: BBCA
+          type: string
+        ratio_from:
+          description: |-
+            Old shares in the ratio. Required for SPLIT, REVERSE_SPLIT and BONUS;
+            must be omitted for DIVIDEND.
+
+            A 1:2 split is ratio_from 1, ratio_to 2 — one share becomes two. A 2:1
+            reverse split is ratio_from 2, ratio_to 1. A bonus of one new share per two
+            held is ratio_from 2, ratio_to 3: the holder ends with three where they had
+            two.
+          example: 1
+          format: int64
+          type: integer
+        ratio_to:
+          description: New shares in the ratio. See ratio_from.
+          example: 2
+          format: int64
+          type: integer
+        record_date:
+          description: |-
+            When holdings are read to decide who receives what, as YYYY-MM-DD.
+            Optional and informational: execution distributes to the holdings as they
+            stand at that moment, since the engine keeps no end-of-day snapshot.
+          example: "2026-08-10"
+          type: string
+      required:
+      - jenis
+      - kode
+      type: object
+    corporateaction.EntryView:
+      properties:
+        cash_amount:
+          description: Rupiah paid to this broker. Zero for a split or bonus.
+          example: 50000
+          format: int64
+          type: integer
+        nama:
+          example: Mirae Asset Sekuritas
+          type: string
+        participant:
+          description: Broker code the shares or cash went to.
+          example: YP
+          type: string
+        shares_after:
+          example: 2000
+          format: int64
+          type: integer
+        shares_before:
+          description: Shares held before and after. Equal for a dividend, which restates
+            nothing.
           example: 1000
           format: int64
           type: integer
+      type: object
+    emiten.CreateRequest:
+      properties:
         kode:
           description: Instrument code, unique across the exchange.
           example: BBNI
@@ -76,7 +292,6 @@ components:
           format: int64
           type: integer
       required:
-      - ipo_price
       - kode
       - listed_shares
       - nama
@@ -199,6 +414,20 @@ components:
         data:
           items:
             $ref: '#/components/schemas/assets.HoldingView'
+          type: array
+          uniqueItems: false
+        limit:
+          type: integer
+        page:
+          type: integer
+        total:
+          type: integer
+      type: object
+    httpx.Page-corporateaction_ActionView:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/corporateaction.ActionView'
           type: array
           uniqueItems: false
         limit:
@@ -435,6 +664,33 @@ components:
           example: 50
           format: int64
           type: integer
+      type: object
+    order.CancelOrderRequest:
+      properties:
+        emiten:
+          description: Emiten (listed instrument) code the order was placed on.
+          example: BBCA
+          type: string
+        order_id:
+          description: Id of the resting order to withdraw.
+          example: 3
+          format: int64
+          minimum: 1
+          type: integer
+        participant:
+          description: Participant (broker) code. Must be the broker that placed the
+            order.
+          example: YP
+          type: string
+      required:
+      - emiten
+      - order_id
+      - participant
+      type: object
+    order.CancelOrderResponse:
+      properties:
+        order:
+          $ref: '#/components/schemas/order.OrderView'
       type: object
     order.OrderHistoryView:
       properties:
@@ -807,15 +1063,8 @@ components:
       type: object
     underwriter.AllocationView:
       properties:
-        jenis:
-          description: 'Role in this offering: "utama" or "pendukung".'
-          enum:
-          - utama
-          - pendukung
-          example: utama
-          type: string
         nama:
-          example: Danareksa Sekuritas
+          example: Mirae Asset Sekuritas
           type: string
         participant:
           description: Broker code the shares were credited to.
@@ -831,7 +1080,11 @@ components:
           format: int64
           type: integer
         underwriter:
-          example: UW01
+          description: |-
+            Broker code that took this tranche. Identical to participant, since an
+            underwriter is a participant; both are present so the field a client keys
+            on does not depend on knowing that.
+          example: YP
           type: string
         value:
           description: 'Proceeds for this tranche: shares × ipo_price.'
@@ -841,32 +1094,36 @@ components:
       type: object
     underwriter.CreateRequest:
       properties:
-        jenis:
-          description: 'Role: "utama" (lead) or "pendukung" (supporting).'
-          enum:
-          - utama
-          - pendukung
-          example: utama
-          type: string
-        kode:
-          description: Underwriter code, unique across the exchange.
-          example: UW03
-          type: string
-        nama:
-          description: Firm name.
-          example: BNI Sekuritas
-          type: string
         participant:
           description: |-
-            Broker code this underwriter trades through. Allocated shares land in this
-            participant's holdings, because only a participant can trade them.
+            Broker code permitted to underwrite. Must be a registered participant.
+            Allocated shares land in this participant's holdings, because only a
+            participant can trade them.
           example: YP
           type: string
       required:
-      - jenis
-      - kode
-      - nama
       - participant
+      type: object
+    underwriter.ExistingIPORequest:
+      properties:
+        ipo_price:
+          description: |-
+            Offering price per share. Must be > 0; becomes the instrument's reference
+            price until it first trades.
+          example: 1000
+          format: int64
+          type: integer
+        underwriters:
+          description: |-
+            The syndicate. At least one entry, and the tranches must sum to exactly
+            the instrument's existing listed_shares. Every member is on equal terms.
+          items:
+            $ref: '#/components/schemas/underwriter.UnderwriterAllocation'
+          type: array
+          uniqueItems: false
+      required:
+      - ipo_price
+      - underwriters
       type: object
     underwriter.IPORequest:
       properties:
@@ -893,8 +1150,8 @@ components:
           type: string
         underwriters:
           description: |-
-            The syndicate. At least one entry, exactly one of which must be "utama",
-            and the lead's tranche must be the largest.
+            The syndicate. At least one entry, and the tranches must sum to exactly
+            listed_shares. Every member is on equal terms.
           items:
             $ref: '#/components/schemas/underwriter.UnderwriterAllocation'
           type: array
@@ -956,8 +1213,8 @@ components:
           format: int64
           type: integer
         underwriter:
-          description: Underwriter code taking this tranche.
-          example: UW01
+          description: Broker code taking this tranche. Must be a registered underwriter.
+          example: YP
           type: string
       required:
       - shares
@@ -968,21 +1225,32 @@ components:
         is_active:
           example: true
           type: boolean
-        jenis:
-          description: 'Role: "utama" (lead) or "pendukung" (supporting).'
-          enum:
-          - utama
-          - pendukung
-          example: utama
-          type: string
         kode:
-          example: UW01
+          description: |-
+            Broker code. Identical to participant; both are present so a client can
+            key on kode like every other listing without knowing they are the same.
+          example: YP
           type: string
         nama:
-          example: Danareksa Sekuritas
+          example: Mirae Asset Sekuritas
           type: string
         participant:
           description: Broker code this underwriter trades through.
+          example: YP
+          type: string
+      type: object
+    wallet.AdjustRequest:
+      properties:
+        amount:
+          description: |-
+            Amount to move, in whole currency units. Positive credits the broker,
+            negative debits it; zero is rejected. A debit may not exceed the cash the
+            broker has not already committed to resting buy orders.
+          example: 5000000000
+          format: int64
+          type: integer
+        participant:
+          description: Broker code the adjustment lands on.
           example: YP
           type: string
       type: object
@@ -1178,6 +1446,302 @@ paths:
       summary: Update trading parameters
       tags:
       - admin
+  /api/admin/corporate-actions:
+    get:
+      description: |-
+        Every announced, executed and cancelled aksi korporasi, newest first.
+
+        Cancelled actions are listed rather than hidden: participants were told
+        about them, so they are part of the instrument's history.
+
+        Pass `kode` to scope the listing to one instrument. The per-broker
+        movements an executed action caused are on the detail endpoint, not here —
+        they are a row per holder and would dominate a listing.
+      operationId: listCorporateActions
+      parameters:
+      - description: Filter by emiten code
+        example: BBCA
+        in: query
+        name: kode
+        schema:
+          type: string
+      - description: Page number, from 1
+        in: query
+        name: page
+        schema:
+          default: 1
+          type: integer
+      - description: Rows per page, max 100
+        in: query
+        name: limit
+        schema:
+          default: 10
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.Page-corporateaction_ActionView'
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unknown emiten
+      security:
+      - ApiKeyAuth: []
+      summary: List corporate actions
+      tags:
+      - admin
+    post:
+      description: |-
+        Records an aksi korporasi that will take effect later. **Nothing moves
+        here** — no holding is restated and no wallet is credited until
+        POST /api/admin/corporate-actions/{id}/execute is called. That gap is the
+        point: an announced action can still be cancelled, and an executed one
+        cannot.
+
+        Four kinds, and the terms you send depend on which:
+        - **SPLIT** — `ratio_from`:`ratio_to`, e.g. 1:2 turns one share into two.
+        `ratio_to` must be greater than `ratio_from`.
+        - **REVERSE_SPLIT** — e.g. 2:1 turns two shares into one. `ratio_to` must
+        be *less* than `ratio_from`.
+        - **BONUS** — new shares issued free to holders. 2:3 hands the holder of
+        two shares a third.
+        - **DIVIDEND** — `amount` in rupiah per share held. No ratio.
+
+        Sending the wrong terms for the kind is rejected rather than ignored: a
+        dividend carrying a ratio means something was misunderstood, and accepting
+        it silently would carry that through to execution.
+
+        The instrument must already be trading. An action over a dormant one would
+        restate holdings nobody has.
+      operationId: announceCorporateAction
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/corporateaction.AnnounceRequest'
+              description: Action to announce
+              summary: body
+        description: Action to announce
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/corporateaction.ActionView'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Bad terms for the kind, or emiten not trading
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unknown emiten
+      security:
+      - ApiKeyAuth: []
+      summary: Announce a corporate action
+      tags:
+      - admin
+  /api/admin/corporate-actions/{id}:
+    get:
+      description: |-
+        One aksi korporasi and every ledger movement it caused: which broker held
+        how many shares before it, how many after, and how much cash it received.
+
+        `entries` is empty for an action that has not executed. That is the honest
+        answer rather than an error — the action exists and is readable, nobody has
+        simply received anything from it yet.
+
+        The share totals are summed from the entries, not read off the instrument,
+        so this keeps reporting what *this* action did even after later actions have
+        moved the instrument on again.
+      operationId: getCorporateAction
+      parameters:
+      - description: Corporate action id
+        example: 1
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/corporateaction.ActionDetailView'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Malformed id
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unknown corporate action
+      security:
+      - ApiKeyAuth: []
+      summary: Corporate action detail
+      tags:
+      - admin
+  /api/admin/corporate-actions/{id}/cancel:
+    post:
+      description: |-
+        Abandons an announced action before it takes effect.
+
+        The row is kept, not deleted: participants were told about the action, so
+        its cancellation is part of the instrument's history, and removing it would
+        leave the record disagreeing with what the market was told.
+
+        Only an ANNOUNCED action can be cancelled — an executed one has already
+        moved every holder's ledger, and there is no undoing that from here.
+      operationId: cancelCorporateAction
+      parameters:
+      - description: Corporate action id
+        example: 1
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/corporateaction.ActionView'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Malformed id
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unknown corporate action
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Already executed or cancelled
+      security:
+      - ApiKeyAuth: []
+      summary: Cancel a corporate action
+      tags:
+      - admin
+  /api/admin/corporate-actions/{id}/execute:
+    post:
+      description: |-
+        Applies an announced action to the ledgers. **This cannot be undone.**
+
+        A SPLIT, REVERSE_SPLIT or BONUS restates every holder's position by the
+        ratio and the instrument's `listed_shares` with it, in one transaction —
+        an instrument whose share count disagreed with the sum of its holders'
+        positions would make every valuation derived from it wrong. The price band's
+        anchor is restated by the inverse ratio at the same time, because the
+        instrument is worth the same immediately after a split as immediately
+        before it; an anchor left alone would auto-reject every order at the new
+        fair value.
+
+        A DIVIDEND credits each holder `amount` × shares held, and restates
+        nothing.
+
+        Shares are indivisible, so a ratio that does not divide a holding evenly
+        truncates — a 2:3 bonus on an odd holding drops the half share rather than
+        issuing one the action never authorised. Holdings are read as they stand at
+        execution; `record_date` is informational, since the engine keeps no
+        end-of-day snapshot.
+
+        Only an ANNOUNCED action can be executed. A second attempt is a 409, which
+        is what stops an action doubling every holding twice.
+      operationId: executeCorporateAction
+      parameters:
+      - description: Corporate action id
+        example: 1
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/corporateaction.ActionDetailView'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Malformed id, or the instrument has no holders
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unknown corporate action
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Already executed or cancelled
+      security:
+      - ApiKeyAuth: []
+      summary: Execute a corporate action
+      tags:
+      - admin
   /api/admin/emiten:
     get:
       description: |-
@@ -1221,17 +1785,33 @@ paths:
       - admin
     post:
       description: |-
-        Creates an emiten and registers it with an empty order book, so it is
-        tradeable immediately — no restart required. It starts active.
+        Registers an emiten and gives it an empty order book. It starts
+        **inactive** and is *not* tradeable — `is_active` is false and every order
+        against it is rejected.
+
+        That is deliberate: a listing is an instrument existing *and* its shares
+        being placed with the market. This endpoint does only the first. An
+        instrument whose shares sit nowhere has nobody who could sell it and no
+        offering price to quote against, so opening its book would advertise a
+        market that cannot trade.
+
+        To make it tradeable, run its offering with
+        `POST /api/admin/emiten/{kode}/ipo`. That is the only way an instrument
+        becomes active, and it is also where ipo_price is set — the offering price
+        is decided when the offering runs, not when the instrument is registered,
+        which is why this request does not take one.
+
+        A dormant instrument is fully readable in the meantime, and is excluded
+        from the composite index until it is priced.
       operationId: createEmiten
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/emiten.CreateRequest'
-              description: Instrument to list
+              description: Instrument to register
               summary: body
-        description: Instrument to list
+        description: Instrument to register
         required: true
       responses:
         "201":
@@ -1260,7 +1840,7 @@ paths:
           description: Instrument code already exists
       security:
       - ApiKeyAuth: []
-      summary: List a new instrument
+      summary: Register a new instrument (dormant)
       tags:
       - admin
   /api/admin/emiten/{kode}:
@@ -1313,15 +1893,259 @@ paths:
       summary: Get instrument detail (admin)
       tags:
       - admin
+  /api/admin/emiten/{kode}/ipo:
+    post:
+      description: |-
+        Takes an instrument that was registered through POST /api/admin/emiten —
+        and is therefore still **dormant** — public: it hands the shares to the
+        syndicate and opens the order book. This is the only way an instrument
+        becomes tradeable.
+
+        The body carries no share counts. listed_shares and unlisted_shares are the
+        instrument's own, fixed when it was registered — an offering decides who
+        underwrites it and at what price, not how many shares the company has. The
+        tranches must sum to exactly the listed_shares it already carries.
+
+        The syndicate rules are the same as POST /api/admin/ipo:
+        - each `underwriter` is a **broker code** that has been permitted to underwrite
+        - the tranches must sum to **exactly** the instrument's listed_shares
+        - every member is on equal terms; there is no lead
+
+        ipo_price becomes the instrument's reference price until it first trades. An
+        instrument that is already trading is rejected — a second offering would
+        issue its shares twice.
+      operationId: runIPOForEmiten
+      parameters:
+      - description: Emiten code
+        example: BBNI
+        in: path
+        name: kode
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/underwriter.ExistingIPORequest'
+              description: Offering to run
+              summary: body
+        description: Offering to run
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/underwriter.IPOResponse'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Bad syndicate, shares do not sum, unknown underwriter, or emiten
+            already trading
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unknown emiten
+      security:
+      - ApiKeyAuth: []
+      summary: Run an IPO over a registered instrument
+      tags:
+      - admin
+  /api/admin/index:
+    get:
+      description: |-
+        Identical to the participant view: the index is one number the whole
+        exchange shares, and there is no broker-specific version of it. Offered
+        on the admin tier so an operator can read it with the key it already
+        holds, rather than having to issue itself a broker key.
+      operationId: getAdminIndex
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/index.IndexView'
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Index has not been computed yet
+      security:
+      - ApiKeyAuth: []
+      summary: Read the composite index (admin)
+      tags:
+      - admin
+  /api/admin/index/capture:
+    post:
+      description: |-
+        Writes the current level into the index history immediately, rather than
+        waiting for the next automatic capture.
+
+        Useful for marking a specific moment — the end of a session, or the state
+        just before an intervention — without depending on where the periodic
+        capture happens to fall.
+
+        Returns the level that was recorded. If nothing has been computed yet,
+        nothing is written and 503 is returned rather than an empty success.
+      operationId: captureIndex
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/index.IndexView'
+          description: Created
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Capture failed
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Index has not been computed yet
+      security:
+      - ApiKeyAuth: []
+      summary: Record a history point now
+      tags:
+      - admin
+  /api/admin/index/history:
+    get:
+      description: |-
+        Identical to the participant view — the same series, offered on the
+        admin tier so an operator can read it with the key it already holds.
+      operationId: getAdminIndexHistory
+      parameters:
+      - description: Start of range, RFC 3339
+        example: "2026-07-30T00:00:00Z"
+        in: query
+        name: from
+        schema:
+          type: string
+      - description: End of range, RFC 3339
+        example: "2026-07-31T00:00:00Z"
+        in: query
+        name: to
+        schema:
+          type: string
+      - description: Page number, from 1
+        in: query
+        name: page
+        schema:
+          default: 1
+          type: integer
+      - description: Rows per page, max 100
+        in: query
+        name: limit
+        schema:
+          default: 10
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.Page-index_SnapshotView'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: from or to is not RFC 3339
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+      security:
+      - ApiKeyAuth: []
+      summary: Read the composite index history (admin)
+      tags:
+      - admin
+  /api/admin/index/recompute:
+    post:
+      description: |-
+        Revalues the whole market immediately and refreshes the published level,
+        instead of waiting for the next trade to trigger it.
+
+        This exists for the case where the level is stale through no fault of the
+        market: a price read failed, or an instrument was listed while the index
+        could not reach the database. Ordinary operation needs no such call — the
+        index recomputes on every execution by itself.
+
+        Admin-only because it is an exchange operation, and because valuing the
+        entire market is real work that no broker should be able to schedule at
+        will.
+      operationId: recomputeIndex
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/index.IndexView'
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Recompute failed
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Nothing could be priced
+      security:
+      - ApiKeyAuth: []
+      summary: Recompute the index now
+      tags:
+      - admin
   /api/admin/ipo:
     post:
       description: |-
         Lists an instrument and hands its shares to the underwriting syndicate in
         one step — an instrument whose shares sit nowhere is not yet an offering.
 
-        The syndicate rules encode what the two roles mean:
-        - exactly **one** underwriter with jenis `utama` (the lead that guarantees it)
-        - the lead's tranche must be the **largest**; `pendukung` means a smaller portion
+        The syndicate is flat — every member takes a tranche on equal terms:
+        - each `underwriter` is a **broker code** that has been permitted to underwrite
         - the tranches must sum to **exactly** listed_shares — a short sum leaves
         shares in nobody's hands, an over-sum conjures shares that were never issued
 
@@ -1712,13 +2536,14 @@ paths:
   /api/admin/underwriters:
     get:
       description: |-
-        Every registered penjamin emisi, ordered by code.
+        Every broker permitted to underwrite offerings, ordered by code.
 
-        jenis is the role: **utama** is the lead underwriter that guarantees an
-        offering, **pendukung** a supporting syndicate member taking a smaller
-        tranche. participant is the broker the firm trades through — allocated
-        shares land in that broker's holdings, because only a participant can
-        trade them.
+        An underwriter is a participant with a permission, not a firm of its own,
+        so kode and nama are that participant's — `kode` and `participant` are
+        always the same value. Allocated shares land in that broker's holdings,
+        because only a participant can trade them.
+
+        Members carry no rank: every underwriter in a syndicate is on equal terms.
       operationId: listUnderwriters
       responses:
         "200":
@@ -1742,18 +2567,25 @@ paths:
       - admin
     post:
       description: |-
-        Registers a penjamin emisi against an existing broker. The broker is its
-        trading identity: IPO allocations credit that participant's holdings, so an
-        underwriter without one could be handed shares it could never sell.
+        Grants an existing broker the right to underwrite offerings. That is all an
+        underwriter is — a participant with a permission — so the request carries
+        only the broker code: its name and code are the participant's already, and
+        are joined on read rather than stored twice.
+
+        The broker is also its trading identity: IPO allocations credit that
+        participant's holdings, so an underwriter without one could be handed
+        shares it could never sell.
+
+        A broker may be registered once. Registering it again is a 409.
       operationId: createUnderwriter
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/underwriter.CreateRequest'
-              description: Underwriter to register
+              description: Broker to permit
               summary: body
-        description: Underwriter to register
+        description: Broker to permit
         required: true
       responses:
         "201":
@@ -1767,7 +2599,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/httpx.ErrorResponse'
-          description: Missing field, bad jenis, or unknown participant
+          description: Missing participant, or unknown participant
         "401":
           content:
             application/json:
@@ -1779,10 +2611,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/httpx.ErrorResponse'
-          description: Underwriter code already exists
+          description: Broker is already an underwriter
       security:
       - ApiKeyAuth: []
-      summary: Register an underwriter
+      summary: Permit a broker to underwrite
       tags:
       - admin
   /api/admin/wallets:
@@ -1834,6 +2666,63 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Cash balances across brokers
+      tags:
+      - admin
+    post:
+      description: |-
+        Moves cash into or out of one broker's balance and returns the balance it
+        settles at. A positive `amount` credits the broker, a negative one debits
+        it; `0` is rejected.
+
+        Admin-only by design: a broker that could credit its own wallet could buy
+        without limit, so funding is an exchange operation.
+
+        A broker registered but never funded has no wallet row yet. This endpoint
+        creates it, so it opens a wallet and fills it in one call.
+
+        A debit is checked against **available** cash, not the stored balance:
+        cash already committed to resting buy orders cannot be withdrawn, or
+        those orders would be left unfunded when they fill. The rejection names
+        the most that may be withdrawn.
+      operationId: adjustWallet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/wallet.AdjustRequest'
+              description: Adjustment to apply
+              summary: body
+        description: Adjustment to apply
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/wallet.WalletView'
+          description: The balance after the adjustment
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing participant, amount of 0, or a debit beyond available
+            cash
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-API-Key
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unknown participant
+      security:
+      - ApiKeyAuth: []
+      summary: Fund or debit a broker's wallet
       tags:
       - admin
   /api/participant/assets:
@@ -2233,6 +3122,20 @@ paths:
 
         A sell is rejected if the broker does not hold enough shares once its
         resting sell orders are counted, so a position can never go negative.
+
+        **Auto-rejection.** A limit order priced outside the instrument's session
+        band is rejected and never reaches the book, so the price it asked for
+        never becomes a level anything else can match against. The band is
+        `reference_price ± emiten_halt_bps` (30% by default) and is anchored to the
+        session reference, not to the last trade — an anchor that moved with the
+        market would let the price walk out of the band one legal step at a time.
+        The rejection message quotes the permitted range.
+
+        **Circuit breaker.** A trade that prints at either edge of the band halts
+        the instrument for halt_duration_seconds (2 minutes by default). Orders
+        submitted during a halt are rejected with the resume time; the book stays
+        readable and resting orders keep their time priority. Trading reopens by
+        itself — no request is needed.
       operationId: submitOrder
       requestBody:
         content:
@@ -2256,7 +3159,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/httpx.ErrorResponse'
           description: Unknown emiten/participant, bad side/type, qty <= 0, price
-            <= 0 for a limit order, insufficient shares, or an inactive emiten
+            <= 0 for a limit order, insufficient shares, an inactive emiten, a price
+            outside the permitted band, or a halted instrument
         "401":
           content:
             application/json:
@@ -2272,6 +3176,65 @@ paths:
       security:
       - ParticipantKeyAuth: []
       summary: Submit a new order
+      tags:
+      - participant
+  /api/participant/orders/cancel:
+    post:
+      description: |-
+        Withdraws an order that is still resting in the book and releases
+        what it had reserved — shares for a sell, cash for a buy — so the
+        broker can use them again immediately. The quantity that already
+        filled stays filled; only the remainder is withdrawn.
+
+        Only the broker that placed the order may cancel it. An order that
+        has already filled or been cancelled is not resting, so it cannot be
+        withdrawn and the request is rejected.
+
+        The book row and the stored order are cancelled in one step, and the
+        updated book is published to subscribers. A cancel produces no trade
+        and therefore moves no price.
+
+        Cancelling is allowed while the instrument is halted: a halt stops new
+        orders from arriving, it does not trap the ones already resting.
+      operationId: cancelOrder
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/order.CancelOrderRequest'
+              description: Order to cancel
+              summary: body
+        description: Order to cancel
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/order.CancelOrderResponse'
+          description: 'Order cancelled: its final state and the quantity released'
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Unknown emiten/participant, order_id <= 0, an order that is
+            not resting, or an order belonging to another participant
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Missing or wrong X-Participant-Key
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/httpx.ErrorResponse'
+          description: Persistence failure
+      security:
+      - ParticipantKeyAuth: []
+      summary: Cancel a resting order
       tags:
       - participant
   /api/participant/transactions:

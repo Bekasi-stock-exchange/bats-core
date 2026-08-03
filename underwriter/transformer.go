@@ -5,8 +5,9 @@ import "bekasi-automatic-trading-system/market"
 // percentScale rounds percentages to two decimal places.
 const percentScale = 100
 
-// Codes resolves the participant ids stored on an underwriter into their codes,
-// using the directory already held in memory — so listing needs no join.
+// Codes resolves the participant ids stored on an underwriter into the code and
+// name a reader sees, using the directory already held in memory — so listing
+// needs no join.
 type Codes struct {
 	dir *market.Directory
 }
@@ -15,14 +16,16 @@ type Codes struct {
 func NewCodes(dir *market.Directory) Codes { return Codes{dir: dir} }
 
 // ToUnderwriterView converts a stored underwriter into its API shape.
+//
+// Every visible field but is_active comes from the participant: the stored row is
+// only the permission, so identity is resolved here rather than duplicated in the
+// database. kode and participant are deliberately the same value — see
+// UnderwriterView.
 func (c Codes) ToUnderwriterView(rec Record) UnderwriterView {
-	view := UnderwriterView{
-		Kode:     rec.Kode,
-		Nama:     rec.Nama,
-		Jenis:    string(rec.Jenis),
-		IsActive: rec.IsActive,
-	}
+	view := UnderwriterView{IsActive: rec.IsActive}
 	if p, ok := c.dir.ParticipantByID(rec.ParticipantID); ok {
+		view.Kode = p.Kode
+		view.Nama = p.Nama
 		view.Participant = p.Kode
 	}
 	return view
@@ -63,9 +66,8 @@ func ToIPOResponse(e market.Emiten, allocs []AllocationRecord) IPOResponse {
 
 	for _, a := range allocs {
 		view := AllocationView{
-			Underwriter: a.UnderwriterKode,
-			Nama:        a.UnderwriterNama,
-			Jenis:       string(a.Jenis),
+			Underwriter: a.ParticipantKode,
+			Nama:        a.ParticipantNama,
 			Participant: a.ParticipantKode,
 			Shares:      a.Shares,
 			Value:       a.Shares * a.Price,

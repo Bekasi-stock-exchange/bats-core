@@ -46,14 +46,30 @@ func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/admin/emiten.
 //
-//	@Summary		List a new instrument
-//	@Description	Creates an emiten and registers it with an empty order book, so it is
-//	@Description	tradeable immediately — no restart required. It starts active.
+//	@Summary		Register a new instrument (dormant)
+//	@Description	Registers an emiten and gives it an empty order book. It starts
+//	@Description	**inactive** and is *not* tradeable — `is_active` is false and every order
+//	@Description	against it is rejected.
+//	@Description
+//	@Description	That is deliberate: a listing is an instrument existing *and* its shares
+//	@Description	being placed with the market. This endpoint does only the first. An
+//	@Description	instrument whose shares sit nowhere has nobody who could sell it and no
+//	@Description	offering price to quote against, so opening its book would advertise a
+//	@Description	market that cannot trade.
+//	@Description
+//	@Description	To make it tradeable, run its offering with
+//	@Description	`POST /api/admin/emiten/{kode}/ipo`. That is the only way an instrument
+//	@Description	becomes active, and it is also where ipo_price is set — the offering price
+//	@Description	is decided when the offering runs, not when the instrument is registered,
+//	@Description	which is why this request does not take one.
+//	@Description
+//	@Description	A dormant instrument is fully readable in the meantime, and is excluded
+//	@Description	from the composite index until it is priced.
 //	@Tags			admin
 //	@ID				createEmiten
 //	@Accept			json
 //	@Produce		json
-//	@Param			body	body		emiten.CreateRequest	true	"Instrument to list"
+//	@Param			body	body		emiten.CreateRequest	true	"Instrument to register"
 //	@Success		201		{object}	emiten.EmitenView
 //	@Failure		400		{object}	httpx.ErrorResponse	"Missing kode/nama, or listed_shares <= 0"
 //	@Failure		401		{object}	httpx.ErrorResponse	"Missing or wrong X-API-Key"

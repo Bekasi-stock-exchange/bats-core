@@ -1,6 +1,14 @@
-// Package underwriter is the admin surface for penjamin emisi: the firms that
-// guarantee an offering, and the IPO endpoint that lists an instrument and hands
-// its shares to them in one step.
+// Package underwriter is the admin surface for penjamin emisi: the participants
+// permitted to underwrite an offering, and the IPO endpoints that open an
+// instrument and hand its shares to them.
+//
+// An underwriter is not a firm of its own — it is a participant with a permission.
+// Registering one records that permission and nothing else; the code and name a
+// reader sees are the participant's, joined on the way out.
+//
+// The syndicate is flat. Every member takes a tranche on the same terms, with no
+// lead to elect and no rule about whose share is largest: the only constraint is
+// that the tranches sum to exactly the shares being issued.
 //
 // It sits above emiten rather than beside it: an IPO *is* a listing plus an
 // allocation, so this package drives emiten.Service for the listing half and owns
@@ -14,30 +22,18 @@ import (
 	"bekasi-automatic-trading-system/market"
 )
 
-// Jenis is an underwriter's role. Only two exist, and the database CHECK mirrors
-// them — a third value is a schema change, not a new string.
-type Jenis string
-
-const (
-	// Utama is the lead underwriter, which guarantees the offering.
-	Utama Jenis = "utama"
-	// Pendukung is a supporting syndicate member.
-	Pendukung Jenis = "pendukung"
-)
-
-// Valid reports whether j is one of the two defined roles.
-func (j Jenis) Valid() bool { return j == Utama || j == Pendukung }
-
 // Record is one underwriter as stored.
 //
-// ParticipantID is its trading identity: allocations move shares into
+// It holds no code or name of its own. An underwriter *is* a participant that may
+// underwrite, so its identity is that participant's — carrying a second copy here
+// would be two sources of truth for one firm, free to drift apart. Readers join
+// them from the directory instead.
+//
+// ParticipantID is also its trading identity: allocations move shares into
 // broker_assets_list, which is keyed by participant, so an underwriter without one
 // could be handed shares it could never sell.
 type Record struct {
 	ID            int64
-	Kode          string
-	Nama          string
-	Jenis         Jenis
 	ParticipantID int64
 	IsActive      bool
 }
@@ -50,16 +46,14 @@ type Record struct {
 type Allocation struct {
 	UnderwriterID int64
 	ParticipantID int64
-	Jenis         Jenis
 	Shares        int64
 }
 
-// AllocationRecord is a stored allocation joined back to the names a reader wants.
+// AllocationRecord is a stored allocation joined back to the participant code and
+// name a reader wants.
 type AllocationRecord struct {
-	UnderwriterKode string
-	UnderwriterNama string
 	ParticipantKode string
-	Jenis           Jenis
+	ParticipantNama string
 	Shares          int64
 	Price           int64
 }
@@ -70,7 +64,11 @@ type AllocationRecord struct {
 // package — so this package depends on a behaviour, not on a database handle.
 type Repository interface {
 	ListUnderwriters(ctx context.Context) ([]Record, error)
-	UnderwriterByKode(ctx context.Context, kode string) (Record, error)
+
+	// UnderwriterByParticipant looks one up by its broker code, which is the
+	// only code an underwriter has.
+	UnderwriterByParticipant(ctx context.Context, kode string) (Record, error)
+
 	CreateUnderwriter(ctx context.Context, u Record) (Record, error)
 
 	// AllocateIPO writes the share allocations for an already-created emiten:
@@ -83,11 +81,22 @@ type Repository interface {
 	AllocationsByEmiten(ctx context.Context, emitenID int64) ([]AllocationRecord, error)
 }
 
-// EmitenLister creates the instrument an IPO lists.
+// EmitenLister creates and opens the instrument an IPO lists.
 //
 // Satisfied by emiten.Service. Declared as an interface so this package drives the
 // listing without reaching into the emiten domain's internals, and so the IPO
 // service stays testable without a database.
+//
+// The two halves are separate calls because an instrument may be registered long
+// before its offering runs: Create leaves it dormant, and Activate is what opens
+// it for trading. An offering over an already-registered instrument uses only the
+// second.
 type EmitenLister interface {
+	// Create registers a dormant instrument. It is not tradeable on return.
 	Create(ctx context.Context, req emiten.CreateRequest) (market.Emiten, error)
+
+	// Activate opens a dormant instrument for trading at its offering price,
+	// refusing one that is already active — which is what stops an instrument
+	// being taken public twice.
+	Activate(ctx context.Context, kode string, ipoPrice int64) (market.Emiten, error)
 }

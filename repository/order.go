@@ -77,6 +77,27 @@ func (r *Order) SaveExecution(ctx context.Context, ex order.Execution) error {
 	return nil
 }
 
+// CancelOrder marks a resting order cancelled, reporting whether a row changed.
+//
+// The WHERE clause pins status = 'open' rather than matching on id alone. That
+// is the guard against cancelling something that is no longer cancellable: an
+// order the matching engine filled a moment earlier is already 'filled', and an
+// unqualified update would quietly rewrite it to 'cancelled' — a filled order
+// with trades against it, recorded as never having happened. Nothing changed,
+// false returned, and the caller turns that into a rejection.
+//
+// remaining is left as it is: the quantity that did fill stays filled, and what
+// is left is simply no longer live.
+func (r *Order) CancelOrder(ctx context.Context, orderID int64) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE orders SET status = 'cancelled'
+		WHERE id = $1 AND status = 'open'`, orderID)
+	if err != nil {
+		return false, fmt.Errorf("repository: cancel order %d: %w", orderID, err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // ListOrders returns one page of order history, newest first.
 func (r *Order) ListOrders(ctx context.Context, f order.OrderFilter, limit, offset int) ([]order.OrderRecord, error) {
 	return postgres.QueryAll(ctx, r.pool, "orders page", `

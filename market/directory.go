@@ -18,14 +18,24 @@ import (
 // instruments that predate the column. It is the reference price until the first
 // trade executes — see ReferencePrice — and is never rewritten afterwards, so the
 // listing price stays auditable.
+// SessionReference is the anchor the price band is measured from, frozen for
+// the session, and nil for an instrument that has no anchor yet.
+//
+// Deliberately not the same thing as the ReferencePrice method below. That
+// method answers "what is this worth right now" and moves with every execution,
+// which is correct for valuation and wrong for a band: anchored to the last
+// trade, a 30% limit lets 190 admit 247, which admits 321, which admits 417 —
+// each step legal, and the instrument walks to 1000 without one rejection. The
+// band holds still for the session so the cumulative move is what is bounded.
 type Emiten struct {
-	ID             int64
-	Kode           string
-	Nama           string
-	ListedShares   int64
-	UnlistedShares int64
-	IsActive       bool
-	IPOPrice       *int64
+	ID               int64
+	Kode             string
+	Nama             string
+	ListedShares     int64
+	UnlistedShares   int64
+	IsActive         bool
+	IPOPrice         *int64
+	SessionReference *int64
 }
 
 // TotalShares is the full share count outstanding.
@@ -164,6 +174,81 @@ func (d *Directory) AddEmiten(e Emiten) {
 	d.emitens = append(d.emitens, Emiten{})
 	copy(d.emitens[i+1:], d.emitens[i:])
 	d.emitens[i] = e
+}
+
+// ActivateEmiten marks a listed instrument tradeable and records the offering
+// price it was activated at, reporting whether the code was found.
+//
+// It exists because an instrument is created dormant and only opens for trading
+// once its shares have been placed — see the emiten service. The IPO price is set
+// here rather than at creation for the same reason: the offering price is decided
+// when the offering runs, not when the instrument is first registered.
+//
+// The three maps hold copies of the struct, not pointers, so each must be updated
+// in turn; missing one would leave a reader seeing a stale IsActive depending on
+// which lookup it happened to use.
+func (d *Directory) ActivateEmiten(kode string, ipoPrice int64) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	e, ok := d.emitenByKode[kode]
+	if !ok {
+		return false
+	}
+
+	e.IsActive = true
+	e.IPOPrice = &ipoPrice
+
+	d.emitenByKode[e.Kode] = e
+	d.emitenByID[e.ID] = e
+	for i := range d.emitens {
+		if d.emitens[i].ID == e.ID {
+			d.emitens[i] = e
+			break
+		}
+	}
+	return true
+}
+
+// RestateShares updates an instrument's listed share count and its band anchor
+// after a corporate action, reporting whether the code was found.
+//
+// A split or bonus changes what a share *is*, so both move together: the count of
+// shares outstanding, and the reference the price band is measured from. Leaving
+// the anchor behind would auto-reject every order at the post-split fair value —
+// a 1:2 split halves the traded price, and a band still centred on the old
+// reference would refuse it. A nil reference leaves the anchor alone, which is an
+// instrument that never had one.
+//
+// UnlistedShares is deliberately untouched. A corporate action here is announced
+// over the listed float, and restating the restricted portion as well would issue
+// shares against a holding this engine does not track.
+//
+// The three maps hold copies of the struct, not pointers, so each must be updated
+// in turn — the same reason ActivateEmiten does.
+func (d *Directory) RestateShares(kode string, listedShares int64, reference *int64) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	e, ok := d.emitenByKode[kode]
+	if !ok {
+		return false
+	}
+
+	e.ListedShares = listedShares
+	if reference != nil {
+		e.SessionReference = reference
+	}
+
+	d.emitenByKode[e.Kode] = e
+	d.emitenByID[e.ID] = e
+	for i := range d.emitens {
+		if d.emitens[i].ID == e.ID {
+			d.emitens[i] = e
+			break
+		}
+	}
+	return true
 }
 
 // AddParticipant registers a newly created broker.

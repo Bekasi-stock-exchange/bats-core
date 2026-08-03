@@ -89,6 +89,13 @@ type Repository interface {
 	// SaveExecution writes an entire matching outcome in one transaction.
 	SaveExecution(ctx context.Context, ex Execution) error
 
+	// CancelOrder marks a resting order cancelled, keeping whatever quantity it
+	// had already filled. It must only affect a row that is still open, and must
+	// report whether it did: the in-memory book and this table can only be
+	// cancelled together, so a row that moved on (filled by a matching pass that
+	// committed first) has to fail the cancel rather than overwrite it.
+	CancelOrder(ctx context.Context, orderID int64) (bool, error)
+
 	// MaxSeqs returns the highest sequence number already used by orders and by
 	// trades (0 when a table is empty). Used at startup to seed the engine's
 	// sequencer so newly assigned values never collide with persisted ones.

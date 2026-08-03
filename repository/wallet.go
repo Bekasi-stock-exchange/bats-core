@@ -85,6 +85,47 @@ func (r *Wallet) FindWallet(ctx context.Context, participantID int64) (wallet.Re
 	return scanWallet(row)
 }
 
+// AdjustWallet applies delta to one broker's balance and returns the row as it
+// stands afterwards.
+//
+// The row may not exist yet — a broker registered but never funded has none —
+// hence the ensure-row insert. It cannot be a single ON CONFLICT DO UPDATE
+// upsert carrying the delta, for the same reason applyWalletDeltas cannot:
+// Postgres evaluates CHECK constraints on the proposed insert tuple *before*
+// conflict arbitration, so a debit would violate CHECK (balance >= 0) even when
+// the existing row easily covers it. Inserting 0 and applying the delta in a
+// separate UPDATE makes the constraint judge only the final balance.
+//
+// Both statements run in one transaction so a debit cannot see the row created
+// and left unchanged. The CHECK stays the last line of defence: the debit was
+// already checked against available cash before this call, so a violation here
+// means the in-memory ledger and this table have drifted, and failing the
+// transaction is the right outcome.
+func (r *Wallet) AdjustWallet(ctx context.Context, participantID, delta int64) (wallet.Record, error) {
+	var rec wallet.Record
+
+	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO broker_wallet (participant_id, balance)
+			VALUES ($1, 0)
+			ON CONFLICT (participant_id) DO NOTHING`, participantID); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `
+			UPDATE broker_wallet
+			SET balance    = balance + $2,
+			    updated_at = now()
+			WHERE participant_id = $1
+			RETURNING participant_id, balance, updated_at`,
+			participantID, delta).
+			Scan(&rec.ParticipantID, &rec.Balance, &rec.UpdatedAt)
+	})
+	if err != nil {
+		return wallet.Record{}, fmt.Errorf("repository: adjust wallet %d: %w", participantID, err)
+	}
+	return rec, nil
+}
+
 // applyWalletDeltas moves cash between brokers as part of the trade that caused
 // it, so a wallet can never disagree with the trades behind it.
 //

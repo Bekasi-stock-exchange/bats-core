@@ -17,6 +17,20 @@ func ToSubmitOrderResponse(res Result) SubmitOrderResponse {
 	}
 }
 
+// ToCancelOrderResponse converts a cancellation into the response shape.
+//
+// Remaining is the quantity that never filled and has now been released — not a
+// quantity still working, which is what the same field means on a submission.
+func ToCancelOrderResponse(res Result) CancelOrderResponse {
+	return CancelOrderResponse{
+		Order: OrderView{
+			ID:        res.Order.ID,
+			Status:    string(res.Order.Status),
+			Remaining: res.Order.Remaining,
+		},
+	}
+}
+
 // ToOrderHistoryViews converts stored orders into the admin history shape.
 //
 // Codes are resolved through market.Directory, which already holds every emiten

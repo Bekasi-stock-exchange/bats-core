@@ -28,11 +28,13 @@ Order → [ JATS: matching ] → Trade → [ KPEI: kliring ] → [ KSEI: settlem
 - Autentikasi dua tingkat: admin key statis, dan key per broker yang disimpan ter-hash di database
 - Kepemilikan saham per broker, ditulis atomik bersama match yang memindahkannya
 - Riwayat harga (eksekusi mentah dan candle OHLC) serta detail instrumen
+- Indeks gabungan (IHSG) tertimbang free-float, dengan penyesuaian divisor dan riwayat
 - Dokumentasi OpenAPI 3.0 yang digenerate dari kode dan disajikan dari binary
 
 **Sengaja di luar cakupan:** call auction / pra-pembukaan, tipe order lain (stop-loss,
 iceberg, FOK, GTD), akun/saldo/portofolio nasabah, kliring & penyelesaian, aksi korporasi,
-penyesuaian free-float indeks, microservice, message broker, dan frontend apa pun.
+jam sesi bursa (dan karenanya persentase perubahan indeks), microservice, message broker, dan
+frontend apa pun.
 
 ## Arsitektur
 
@@ -93,8 +95,14 @@ participant/       controller.go  service.go  middleware.go  context.go
 emiten/            controller.go  service.go  transformer.go  dto.go  ports.go
 assets/            controller.go  service.go  transformer.go  dto.go  ports.go
 trade/             controller.go  service.go  transformer.go  dto.go  ports.go
+wallet/            controller.go  service.go  transformer.go  dto.go  ports.go
+underwriter/       controller.go  service.go  transformer.go  dto.go  ports.go
+marketconfig/      controller.go  service.go  cache.go  dto.go  ports.go  # parameter bursa runtime
+index/             controller.go  service.go  cache.go  notifier.go
+                   transformer.go  dto.go  ports.go  service_test.go     # indeks gabungan (IHSG)
 repository/        repository.go  master.go  emiten.go  participant.go
-                   order.go  trade.go  asset.go                         # SEMUA SQL di sini
+                   order.go  trade.go  asset.go  wallet.go
+                   underwriter.go  marketconfig.go  index.go             # SEMUA SQL di sini
 platform/config/   config.go                                            # manajemen env viper
 platform/postgres/ pool.go                                              # pool pgx + helper QueryAll
 platform/httpx/    respond.go  pagination.go  middleware.go             # JSON, paging, auth
@@ -102,7 +110,7 @@ platform/docs/     handler.go  swagger.yaml  swagger.json               # Swagge
 platform/server/   router.go                                            # tabel route
 cmd/migrate/       main.go                                              # runner migrasi
 cmd/gendocs/       main.go                                              # generasi OpenAPI
-migrations/        001_emiten.sql .. 007_auth_assets_unlisted.sql       # skema + seed
+migrations/        001_emiten.sql .. 014_index.sql                      # skema + seed
 main.go                                                                 # composition root
 ```
 
@@ -244,6 +252,8 @@ curl -X DELETE localhost:8080/api/admin/participants/apikey \
 | `GET /api/participant/emiten/{kode}` | Detail instrumen: harga, free float, kapitalisasi pasar |
 | `GET /api/participant/emiten/{kode}/prices` | Riwayat harga, eksekusi mentah |
 | `GET /api/participant/emiten/{kode}/candles` | Riwayat harga, OHLC (`1m`, `5m`, `1h`, `1d`) |
+| `GET /api/participant/index` | Indeks gabungan (IHSG) saat ini |
+| `GET /api/participant/index/history` | Riwayat indeks, dengan filter `from`/`to` |
 | `GET /ws/participant/orderbook/{kode}` | Stream book (WebSocket) |
 
 ```bash
@@ -274,6 +284,15 @@ lain.
 | `GET /api/admin/trades` | Log eksekusi |
 | `GET /api/admin/transactions` | Riwayat fill broker mana pun (`?participant=`) |
 | `GET /api/admin/assets` | Kepemilikan lintas broker |
+| `GET /api/admin/wallets` | Saldo kas lintas broker |
+| `POST /api/admin/wallets` | Tambah atau kurangi saldo kas satu broker |
+| `GET`/`POST /api/admin/underwriters` | Daftar atau daftarkan penjamin emisi |
+| `POST /api/admin/ipo` | Catatkan instrumen sekaligus bagikan sahamnya |
+| `GET`/`PUT /api/admin/config` | Baca atau ubah parameter bursa (`min_price`) |
+| `GET /api/admin/index` | Indeks gabungan saat ini |
+| `GET /api/admin/index/history` | Riwayat indeks |
+| `POST /api/admin/index/recompute` | Hitung ulang indeks sekarang juga |
+| `POST /api/admin/index/capture` | Catat titik riwayat indeks sekarang juga |
 | `GET /ws/admin/orderbook/{kode}` | Stream book (WebSocket) |
 
 Emiten yang baru dibuat **langsung bisa diperdagangkan** — ia didaftarkan dengan book kosong
@@ -434,8 +453,59 @@ Setelah transaksi ada, dua hal mengikuti sebagai turunan (bukan fitur terpisah):
 - **Harga saham** = agregasi tabel `trades`. Harga terakhir = harga transaksi terbaru; OHLC =
   agregasi per interval waktu.
 - **Indeks (IHSG)** = tertimbang kapitalisasi pasar dari harga-harga saham
-  (`market_cap = reference_price × listed_shares`). Versi awal belum memperhitungkan free-float
-  dan penyesuaian divisor.
+  (`market_cap = reference_price × listed_shares`), dibagi divisor dan diskalakan ke basis 100.
+
+### Indeks gabungan
+
+Bobotnya adalah **free-float** — `listed_shares`, bukan `total_shares` — mengikuti metodologi
+BEI sejak 2021. Menimbang dengan total saham beredar akan membuat emiten yang mayoritas
+sahamnya tidak tercatat mendominasi indeks dengan saham yang tidak bisa dibeli siapa pun.
+
+Setiap instrumen dinilai pada `reference_price`-nya, aturan yang sama dengan endpoint detail
+emiten: harga transaksi terakhir, dengan harga IPO sebagai penopang sampai transaksi pertama
+terjadi. Instrumen yang tidak punya keduanya **dikeluarkan** dari perhitungan, bukan dihitung
+nol — nol berarti "tidak bernilai", pernyataan yang berbeda dan keliru. Karena itu respons
+membawa `members` dan `total`: selisih keduanya adalah satu-satunya cara pembaca tahu ada
+instrumen yang tidak ikut dihitung.
+
+**Divisor disimpan, tidak pernah dihitung ulang dari anggota yang ada.** Inilah yang membuat
+indeks menjadi seri harga, bukan sekadar total kapitalisasi berjalan: saat satu instrumen
+dicatatkan, kapitalisasi pasar melonjak sebesar seluruh nilai instrumen itu, padahal tidak ada
+satu harga pun yang bergerak. Divisor dinyatakan ulang dengan rasio yang sama sehingga level
+indeks tidak berubah melewati peristiwa tersebut, dan setiap pergerakan setelahnya adalah
+pergerakan harga yang sungguh-sungguh. Menghitungnya ulang dari nol justru akan menghapus
+koreksi itu.
+
+Migrasi `014` menyemai divisor dengan nilai 1 karena file migrasi tidak bisa melihat
+kapitalisasi pasar; nilai sebenarnya ditetapkan sekali pada startup pertama. Setelah itu hanya
+pencatatan baru yang mengubahnya.
+
+Perhitungan berjalan di goroutine tersendiri, bukan di jalur order. `order.Service` memegang
+`submitMu` sepanjang urutan reserve-match-persist, dan menilai seluruh pasar di dalam lock itu
+berarti menambahkan biaya valuasi penuh ke latensi setiap order. Sinyalnya satu slot: transaksi
+yang datang saat perhitungan masih tertunda tidak memicu perhitungan kedua, sehingga ledakan
+eksekusi berbiaya satu kali hitung, bukan satu per eksekusi.
+
+Riwayat disimpan ke `index_snapshot` setiap menit, terpisah dari perhitungannya. Satu baris per
+eksekusi hanya akan menggelembungkan tabel tanpa memberi tahu apa pun yang tidak sudah
+disampaikan satu titik per menit. Setiap baris menyimpan divisor yang berlaku saat itu, sebab
+tanpa itu level lama tidak bisa diverifikasi ulang setelah divisor dinyatakan ulang.
+
+Pembacaan indeks tersedia di **kedua tingkat** dengan payload yang sama persis, karena indeks
+adalah satu angka milik seluruh bursa — tidak ada versi per-broker. Handler-nya pun satu,
+hanya middleware penjaganya yang berbeda, sehingga kedua view tidak mungkin menyimpang saat
+ada field baru. Yang benar-benar khusus admin adalah dua operasinya: `recompute` menilai ulang
+seluruh pasar, dan `capture` menulis riwayat — keduanya pekerjaan bursa, bukan sesuatu yang
+boleh dijadwalkan sesuka hati oleh satu broker.
+
+Keduanya adalah jalan keluar, bukan bagian dari operasi normal: indeks sudah menghitung ulang
+sendiri pada setiap eksekusi dan menyimpan riwayat tiap menit. `recompute` berguna ketika level
+menjadi basi bukan karena pasarnya — misalnya pembacaan harga gagal — dan `capture` untuk
+menandai momen tertentu tanpa bergantung pada kapan pencatatan periodik kebetulan jatuh.
+
+**Yang belum ada:** persentase perubahan (butuh konsep previous close, yang butuh jam sesi
+bursa — keduanya belum ada di sistem), penanganan delisting dan aksi korporasi (jalurnya sendiri
+belum ada), serta retensi `index_snapshot`.
 
 ## Pasar perdana: penjamin emisi dan IPO
 

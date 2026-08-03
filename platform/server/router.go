@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"bekasi-automatic-trading-system/assets"
+	"bekasi-automatic-trading-system/corporateaction"
 	"bekasi-automatic-trading-system/emiten"
 	"bekasi-automatic-trading-system/index"
 	"bekasi-automatic-trading-system/marketconfig"
@@ -34,6 +35,7 @@ type Deps struct {
 	Emiten      *emiten.Controller
 	Index       *index.Controller
 	Underwriter *underwriter.Controller
+	Corporate   *corporateaction.Controller
 	Config      *marketconfig.Controller
 	Assets      *assets.Controller
 	Wallet      *wallet.Controller
@@ -59,6 +61,10 @@ func Handler(d Deps) http.Handler {
 
 	// --- Participant tier: trading and market data -----------------------
 	mux.HandleFunc("POST /api/participant/orders", broker(d.Order.Submit))
+	// A cancellation is a broker withdrawing its own liquidity, so it sits in the
+	// participant tier beside the submission it undoes. POST rather than DELETE:
+	// the order is not removed, it moves to a terminal state and stays in history.
+	mux.HandleFunc("POST /api/participant/orders/cancel", broker(d.Order.Cancel))
 	mux.HandleFunc("GET /api/participant/orderbook", broker(d.OrderBook.List))
 	mux.HandleFunc("GET /api/participant/orderbook/{kode}", broker(d.OrderBook.Get))
 	mux.HandleFunc("GET /api/participant/assets", broker(d.Assets.Mine))
@@ -84,8 +90,19 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/admin/emiten", admin(d.Emiten.List))
 	mux.HandleFunc("POST /api/admin/emiten", admin(d.Emiten.Create))
 	mux.HandleFunc("GET /api/admin/emiten/{kode}", admin(d.Emiten.AdminDetail))
+	mux.HandleFunc("POST /api/admin/emiten/{kode}/ipo", admin(d.Underwriter.IPOExisting))
 	mux.HandleFunc("GET /api/admin/underwriters", admin(d.Underwriter.List))
 	mux.HandleFunc("POST /api/admin/underwriters", admin(d.Underwriter.Create))
+	// Corporate actions are admin-only for the same reason an offering is: a
+	// broker able to split its own holdings or pay itself a dividend could mint
+	// shares and cash at will. Announce and execute are separate routes because
+	// they are separate decisions — the first can still be taken back, the second
+	// has moved every holder's ledger.
+	mux.HandleFunc("GET /api/admin/corporate-actions", admin(d.Corporate.List))
+	mux.HandleFunc("POST /api/admin/corporate-actions", admin(d.Corporate.Announce))
+	mux.HandleFunc("GET /api/admin/corporate-actions/{id}", admin(d.Corporate.Detail))
+	mux.HandleFunc("POST /api/admin/corporate-actions/{id}/execute", admin(d.Corporate.Execute))
+	mux.HandleFunc("POST /api/admin/corporate-actions/{id}/cancel", admin(d.Corporate.Cancel))
 	// Admin-only by design: an offering both lists an instrument and issues its
 	// shares, so it is an exchange operation, never a broker one.
 	mux.HandleFunc("POST /api/admin/ipo", admin(d.Underwriter.IPO))
@@ -94,6 +111,18 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/admin/transactions", admin(d.Trade.AdminTransactions))
 	mux.HandleFunc("GET /api/admin/assets", admin(d.Assets.All))
 	mux.HandleFunc("GET /api/admin/wallets", admin(d.Wallet.All))
+	// Funding is admin-only for the same reason an offering is: a broker able to
+	// credit its own wallet could buy without limit.
+	mux.HandleFunc("POST /api/admin/wallets", admin(d.Wallet.Adjust))
+	// The index reads are the same payload the participant tier serves — one
+	// index, no per-broker version — offered here so an operator can use the key
+	// it already holds. Recompute and capture are admin-only in substance:
+	// revaluing the whole market and writing history are exchange operations, not
+	// something a broker should be able to schedule.
+	mux.HandleFunc("GET /api/admin/index", admin(d.Index.AdminCurrent))
+	mux.HandleFunc("GET /api/admin/index/history", admin(d.Index.AdminHistory))
+	mux.HandleFunc("POST /api/admin/index/recompute", admin(d.Index.Recompute))
+	mux.HandleFunc("POST /api/admin/index/capture", admin(d.Index.Capture))
 
 	// --- WebSocket: same stream, one door per tier -----------------------
 	// One controller registered twice. The payload is identical; only the

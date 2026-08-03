@@ -18,6 +18,7 @@ package market
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"bekasi-automatic-trading-system/engine"
 )
@@ -39,6 +40,18 @@ var ErrInsufficientBalance = errors.New("market: insufficient balance")
 // readable; only new orders are refused.
 var ErrEmitenInactive = errors.New("market: emiten is not active")
 
+// ErrEmitenHalted rejects an order for an instrument whose circuit breaker has
+// tripped. Distinct from ErrEmitenInactive: inactive is an administrative state
+// an operator sets and clears, while a halt is automatic, temporary, and ends by
+// itself. A client that sees this one should retry after the halt expires; a
+// client that sees the other should not.
+var ErrEmitenHalted = errors.New("market: trading halted")
+
+// ErrOutsideBand rejects an order priced beyond the session's permitted range —
+// auto-rejection, ARA above and ARB below. The order never reaches the book, so
+// the price it asked for never becomes one anything else can match against.
+var ErrOutsideBand = errors.New("market: price outside permitted band")
+
 // Registry owns every order book and the lock that serializes access to them.
 //
 // Concurrency model (spec §6): only one goroutine may touch a given order book at
@@ -55,14 +68,108 @@ type Registry struct {
 	books map[int64]*book
 	seq   *engine.Sequencer
 	pos   *positions
+
+	// breaker supplies the band threshold and halt duration in force. Optional:
+	// nil disables auto-rejection and the circuit breaker entirely, which is what
+	// the engine and registry tests expect and what a deployment without the
+	// config domain wired up falls back to.
+	breaker BreakerPolicy
+
+	// halts is notified when a breaker trips or a halt expires, so the halt can
+	// be persisted and announced. Optional, and never called while r.mu is held.
+	halts HaltObserver
+
+	// now is the clock, injected so tests can drive a halt to its expiry without
+	// sleeping through it. nil means time.Now.
+	now func() time.Time
+}
+
+// BreakerPolicy supplies the circuit breaker configuration the registry
+// enforces.
+//
+// Declared here rather than importing marketconfig: market is the shared kernel
+// and sits below every domain package, so depending on one would invert the
+// layering the whole package graph rests on. Satisfied by an adapter over
+// marketconfig.Cache.
+type BreakerPolicy interface {
+	// EmitenBandBPS is how far an instrument may move from its session reference
+	// before orders are auto-rejected and, at the edge, trading halts. In basis
+	// points.
+	EmitenBandBPS() int64
+
+	// HaltDuration is how long a triggered halt lasts.
+	HaltDuration() time.Duration
+}
+
+// HaltObserver is notified when an instrument's trading status changes.
+//
+// Implementations must not call back into the Registry: they are invoked from
+// the submit path, and the registry's lock is not reentrant. They are called
+// after the lock is released, so an implementation that needs registry state
+// may read it — but must expect it to have moved on.
+type HaltObserver interface {
+	// Halted announces that a breaker tripped. price is what printed, reference
+	// the anchor it was measured against, and until when trading may resume.
+	Halted(emitenID int64, price, reference int64, until time.Time)
+
+	// Resumed announces that a halt expired and the book is open again.
+	Resumed(emitenID int64)
+}
+
+// WithBreaker installs the circuit breaker policy and the observer notified when
+// it trips.
+//
+// A setter rather than a constructor parameter, matching how the order service
+// takes its trade observer: the registry is built early in the composition root,
+// from master data, while the config cache and the persistence that records a
+// halt are wired later. Either argument may be nil.
+func (r *Registry) WithBreaker(p BreakerPolicy, o HaltObserver) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.breaker = p
+	r.halts = o
+}
+
+// clock returns the time source, defaulting to time.Now.
+func (r *Registry) clock() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
 }
 
 // book pairs an engine with its emiten code and trading status, so a snapshot can
 // be labelled and an order gated without a second lookup through Directory.
+//
+// reference and haltedUntil live here, beside the engine, rather than in a table
+// of their own. Both are read on the submit path under the registry's lock, and
+// that is the point: the band check, the halt check, matching, and the halt that
+// a resulting trade may trigger all happen in one critical section, so no order
+// can slip through between a breaker tripping and the book closing.
 type book struct {
 	kode   string
 	active bool
 	engine *engine.Engine
+
+	// reference is the session anchor the price band is measured from. Zero
+	// means the instrument has no anchor yet — never traded, never priced — and
+	// no band applies.
+	reference int64
+
+	// haltedUntil is when an active halt expires. Zero means not halted.
+	haltedUntil time.Time
+}
+
+// halted reports whether the book is halted as of now. Caller must hold r.mu.
+//
+// Compared against the clock on each read rather than cleared by a timer,
+// because those two can disagree: a timer that has fired but whose goroutine has
+// not yet been scheduled would leave a book that is logically open still
+// rejecting orders. Deriving the answer from the deadline makes the halt end at
+// exactly the instant it is supposed to, and leaves the timer responsible only
+// for the side effects — persisting the resume and announcing it.
+func (b *book) halted(now time.Time) bool {
+	return !b.haltedUntil.IsZero() && now.Before(b.haltedUntil)
 }
 
 // NewRegistry builds one engine per emiten, all drawing sequence numbers from
@@ -146,11 +253,15 @@ func (r *Registry) restoreOpenOrdersLocked(orders []OpenOrder) {
 }
 
 func newBook(e Emiten, seq *engine.Sequencer) *book {
-	return &book{
+	b := &book{
 		kode:   e.Kode,
 		active: e.IsActive,
 		engine: engine.NewEngineWithSequencer(e.ID, seq),
 	}
+	if e.SessionReference != nil {
+		b.reference = *e.SessionReference
+	}
+	return b
 }
 
 // AddBook registers a newly created emiten with an empty order book, which is the
@@ -163,6 +274,21 @@ func (r *Registry) AddBook(e Emiten) {
 		return
 	}
 	r.books[e.ID] = newBook(e, r.seq)
+}
+
+// ActivateBook opens a dormant instrument's book for matching.
+//
+// The active flag is copied onto the book at registration, so flipping the
+// database row and the directory entry is not enough — Submit consults this copy,
+// and without this call an activated instrument would keep rejecting orders with
+// ErrEmitenInactive. Registering the book at creation and only opening it here is
+// deliberate: the book must exist to be readable while the instrument is dormant.
+func (r *Registry) ActivateBook(emitenID int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if b, ok := r.books[emitenID]; ok {
+		b.active = true
+	}
 }
 
 // CreditShares adds shares to a broker's holding outside of any trade.
@@ -187,6 +313,41 @@ func (r *Registry) Holding(participantID, emitenID int64) int64 {
 	return r.pos.Held(participantID, emitenID)
 }
 
+// AdjustCash moves a broker's cash balance outside of any trade, and reports the
+// balance it settles at.
+//
+// It exists for administrative funding: an operator crediting or debiting a
+// broker has no counterparty, which applyTrades — built around a buyer and a
+// seller exchanging cash for shares — cannot express.
+//
+// A debit is checked against available cash, not the balance: cash already
+// promised to resting buy orders is spent as far as this ledger is concerned,
+// and letting an operator withdraw it would leave those orders unfunded and
+// surface later as a CHECK (balance >= 0) violation when they fill, rather than
+// as the clean rejection returned here. A credit is never refused.
+//
+// Persisting is the caller's job and must come first: this only moves the
+// in-memory ledger, and crediting before the write is durable would let a
+// broker spend money the database never recorded.
+func (r *Registry) AdjustCash(participantID, delta int64) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if delta < 0 && -delta > r.pos.availableCash(participantID) {
+		return 0, ErrInsufficientBalance
+	}
+	r.pos.addCash(participantID, delta)
+	return r.pos.Cash(participantID), nil
+}
+
+// AvailableCash reports what a broker may still spend: its balance, minus what
+// its resting buy orders have already promised away.
+func (r *Registry) AvailableCash(participantID int64) int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.pos.availableCash(participantID)
+}
+
 // Submit runs an order through its emiten's matching engine, then invokes
 // persist with the resulting trades before applying any of them to the share
 // and cash ledgers.
@@ -206,15 +367,53 @@ func (r *Registry) Holding(participantID, emitenID int64) int64 {
 // a missing order row, and its unreserved shares let a seller go negative at
 // the balance check — and none of that can self-heal short of a restart.
 func (r *Registry) Submit(o *engine.Order, persist func([]engine.Trade) error) ([]engine.Trade, BookState, error) {
+	trades, state, halt, err := r.submitLocked(o, persist)
+
+	// Announced after the lock is released. The observer persists the halt and
+	// broadcasts it, neither of which belongs inside the critical section that
+	// every other emiten's matching is waiting on.
+	if halt != nil && r.halts != nil {
+		r.halts.Halted(halt.emitenID, halt.price, halt.reference, halt.until)
+	}
+	return trades, state, err
+}
+
+// haltTrigger records a breaker that tripped during a matching pass, so Submit
+// can announce it once the lock is released.
+type haltTrigger struct {
+	emitenID  int64
+	price     int64
+	reference int64
+	until     time.Time
+}
+
+// submitLocked is Submit's body. It returns the halt it triggered, if any,
+// rather than announcing it itself — the announcement must happen outside r.mu.
+func (r *Registry) submitLocked(o *engine.Order, persist func([]engine.Trade) error) ([]engine.Trade, BookState, *haltTrigger, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	b, ok := r.books[o.EmitenID]
 	if !ok {
-		return nil, BookState{}, ErrUnknownEmiten
+		return nil, BookState{}, nil, ErrUnknownEmiten
 	}
 	if !b.active {
-		return nil, BookState{}, ErrEmitenInactive
+		return nil, BookState{}, nil, ErrEmitenInactive
+	}
+
+	now := r.clock()
+	if b.halted(now) {
+		return nil, BookState{}, nil, ErrEmitenHalted
+	}
+
+	// Auto-rejection. A limit order priced outside the session band never reaches
+	// the book — which is the whole point: a rejected order cannot rest as the
+	// best price on its side, so nothing later can match against the level it
+	// asked for. A market order carries no price and is not checked here; what it
+	// pays is a resting order's price, and that was validated on its own way in.
+	band, hasBand := r.bandLocked(b)
+	if hasBand && o.Type == engine.Limit && !band.Allows(o.Price) {
+		return nil, BookState{}, nil, ErrOutsideBand
 	}
 
 	// A sell must be covered by shares that are not already promised to this
@@ -222,7 +421,7 @@ func (r *Registry) Submit(o *engine.Order, persist func([]engine.Trade) error) (
 	// a clean rejection rather than a matching pass that has to be unwound.
 	if o.Side == engine.Sell {
 		if o.Qty > r.pos.available(o.ParticipantID, o.EmitenID) {
-			return nil, BookState{}, ErrInsufficientShares
+			return nil, BookState{}, nil, ErrInsufficientShares
 		}
 	}
 
@@ -232,13 +431,13 @@ func (r *Registry) Submit(o *engine.Order, persist func([]engine.Trade) error) (
 	if o.Side == engine.Buy {
 		cost, ok := b.engine.EstimateCost(o)
 		if ok && cost > r.pos.availableCash(o.ParticipantID) {
-			return nil, BookState{}, ErrInsufficientBalance
+			return nil, BookState{}, nil, ErrInsufficientBalance
 		}
 	}
 
 	trades, err := b.engine.SubmitAtomic(o, persist)
 	if err != nil {
-		return nil, BookState{}, err
+		return nil, BookState{}, nil, err
 	}
 
 	r.applyTrades(o, trades)
@@ -252,7 +451,47 @@ func (r *Registry) Submit(o *engine.Order, persist func([]engine.Trade) error) (
 		r.pos.addCashReserved(o.ParticipantID, o.Remaining*o.Price)
 	}
 
-	return trades, b.state(), nil
+	// The circuit breaker, measured against trades that actually printed rather
+	// than against what an order asked for. Auto-rejection above has already
+	// refused anything outside the band, so a price can only reach the edge
+	// legally — which is exactly the event worth halting on.
+	//
+	// The halt lands before the book state is captured, so the snapshot this
+	// returns already reflects a halted instrument rather than one that is about
+	// to be.
+	var halt *haltTrigger
+	if hasBand && len(trades) > 0 {
+		if last := trades[len(trades)-1].Price; band.AtLimit(last) {
+			until := now.Add(r.breaker.HaltDuration())
+			b.haltedUntil = until
+			halt = &haltTrigger{
+				emitenID:  o.EmitenID,
+				price:     last,
+				reference: band.Reference,
+				until:     until,
+			}
+		}
+	}
+
+	return trades, b.state(), halt, nil
+}
+
+// bandLocked returns the price band in force for a book, and whether one applies
+// at all. Caller must hold r.mu.
+//
+// No band applies when the breaker is unconfigured or the instrument has no
+// session reference — a freshly listed instrument that never had an offering
+// price has nothing to measure 30% against, and inventing an anchor would either
+// reject every order or bound the price to a number nobody chose.
+func (r *Registry) bandLocked(b *book) (Band, bool) {
+	if r.breaker == nil || b.reference <= 0 {
+		return Band{}, false
+	}
+	bps := r.breaker.EmitenBandBPS()
+	if bps <= 0 {
+		return Band{}, false
+	}
+	return NewBand(b.reference, bps), true
 }
 
 // applyTrades moves shares between the two sides of every execution. Caller must
@@ -282,6 +521,207 @@ func (r *Registry) applyTrades(incoming *engine.Order, trades []engine.Trade) {
 			r.pos.addCashReserved(t.BuyParticipantID, -cost)
 		}
 	}
+}
+
+// ErrOrderNotFound rejects a cancel for an order that is not resting in any
+// book — it never existed, already filled, or was already cancelled. Client
+// error: only a resting order can be withdrawn.
+var ErrOrderNotFound = errors.New("market: order not resting")
+
+// ErrNotOrderOwner rejects a cancel issued by a broker that does not own the
+// order. Withdrawing another broker's liquidity is not a permission any
+// participant has.
+var ErrNotOrderOwner = errors.New("market: order belongs to another participant")
+
+// Cancelled is a withdrawn order as the caller sees it: its final state, and
+// the book it left behind.
+type Cancelled struct {
+	Order *engine.Order
+	State BookState
+}
+
+// Cancel withdraws a resting order from its book and releases the shares or
+// cash it had promised away, invoking persist before either takes effect.
+//
+// participantID is the broker asking. An order may only be cancelled by the
+// broker that placed it, checked here rather than in the service because this
+// is the only layer that holds the resting order and can see who owns it.
+//
+// Everything happens under one lock acquisition — the lookup, the ownership
+// check, the removal, the persist callback, and the ledger release — for the
+// same reason Submit does: a cancel that overlapped a matching pass could
+// release a reservation against a quantity that had just traded away, leaving
+// the ledger claiming shares the broker no longer has. Serializing the two
+// makes the remainder this reads the remainder that is actually still resting.
+//
+// The ledger is released only after persist succeeds, and a failed persist puts
+// the order back in the book at its original price and Seq (CancelAtomic), so
+// on error neither the book nor the ledger has moved and the caller may retry.
+//
+// A halted instrument is deliberately not blocked. A halt stops new orders from
+// arriving; it does not trap the orders already resting — a broker that cannot
+// withdraw its own liquidity during a halt is exposed for the halt's whole
+// duration to a reopening it cannot react to.
+func (r *Registry) Cancel(emitenID, orderID, participantID int64, persist func(*engine.Order) error) (Cancelled, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	b, ok := r.books[emitenID]
+	if !ok {
+		return Cancelled{}, ErrUnknownEmiten
+	}
+
+	// Ownership is checked before the removal, so a cancel aimed at someone
+	// else's order never disturbs the book even momentarily.
+	resting := b.engine.Find(orderID)
+	if resting == nil {
+		return Cancelled{}, ErrOrderNotFound
+	}
+	if resting.ParticipantID != participantID {
+		return Cancelled{}, ErrNotOrderOwner
+	}
+
+	// Captured before the cancel: CancelAtomic leaves Remaining untouched, but
+	// reading it up front keeps the release sized to what this call actually
+	// withdrew rather than to whatever the order holds by the time we get here.
+	remaining := resting.Remaining
+
+	o, found, err := b.engine.CancelAtomic(orderID, persist)
+	if err != nil {
+		return Cancelled{}, err
+	}
+	if !found {
+		return Cancelled{}, ErrOrderNotFound
+	}
+
+	// Release what the order had promised away. A sell reserved shares; a buy
+	// reserved cash at its own limit price — the same notional Submit committed
+	// when it rested, so the ledger nets back to exactly zero.
+	if o.Side == engine.Sell {
+		r.pos.addReserved(o.ParticipantID, o.EmitenID, -remaining)
+	} else {
+		r.pos.addCashReserved(o.ParticipantID, -remaining*o.Price)
+	}
+
+	return Cancelled{Order: o, State: b.state()}, nil
+}
+
+// HaltState is an instrument's halt as seen from outside: whether it is halted
+// right now, and when it resumes.
+type HaltState struct {
+	Halted    bool
+	ResumesAt time.Time
+}
+
+// Halt reports the halt state of one emiten.
+func (r *Registry) Halt(emitenID int64) (HaltState, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	b, ok := r.books[emitenID]
+	if !ok {
+		return HaltState{}, ErrUnknownEmiten
+	}
+	if !b.halted(r.clock()) {
+		return HaltState{}, nil
+	}
+	return HaltState{Halted: true, ResumesAt: b.haltedUntil}, nil
+}
+
+// HaltUntil places an instrument under a halt that expires at until, and reports
+// whether the emiten exists.
+//
+// It exists for two callers: the operator who halts an instrument by hand, and
+// startup, which restores halts that were still running when the process
+// stopped. A halt that did not survive a restart would reopen the instrument
+// early — at exactly the moment least likely to be watched.
+func (r *Registry) HaltUntil(emitenID int64, until time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	b, ok := r.books[emitenID]
+	if !ok {
+		return false
+	}
+	b.haltedUntil = until
+	return true
+}
+
+// Resume lifts a halt early, reporting whether the emiten exists. An operator's
+// override; an untouched halt ends on its own.
+func (r *Registry) Resume(emitenID int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	b, ok := r.books[emitenID]
+	if !ok {
+		return false
+	}
+	b.haltedUntil = time.Time{}
+	return true
+}
+
+// ExpireHalts clears every halt whose deadline has passed and returns the emiten
+// ids that resumed.
+//
+// This is the whole of the time-based machinery, and it is deliberately a poll
+// rather than a timer per halt. The registry's concurrency model is one lock
+// around every book, and matching must stay sequential and deterministic; a
+// goroutine per halt firing on its own schedule would reopen a book from
+// whatever thread the runtime happened to pick, which is precisely the race that
+// model exists to prevent. One caller, on one interval, taking the lock once, is
+// both simpler and the only shape that keeps the guarantee.
+//
+// Note that a halt has already stopped gating orders by the time this runs:
+// book.halted compares against the clock, so the instrument reopens at its
+// deadline whether or not this has been called yet. What this adds is the side
+// effects — clearing the state, and giving the caller the list to persist and
+// announce.
+func (r *Registry) ExpireHalts() []int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := r.clock()
+	var resumed []int64
+	for id, b := range r.books {
+		if b.haltedUntil.IsZero() || now.Before(b.haltedUntil) {
+			continue
+		}
+		b.haltedUntil = time.Time{}
+		resumed = append(resumed, id)
+	}
+	return resumed
+}
+
+// SetReference updates the session anchor the price band is measured from, and
+// reports whether the emiten exists.
+//
+// Called at the session boundary, and when an instrument is activated at its
+// offering price. Not called on every trade: an anchor that moved with the
+// market would let the band walk, which is the failure the band exists to
+// prevent.
+func (r *Registry) SetReference(emitenID, price int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	b, ok := r.books[emitenID]
+	if !ok {
+		return false
+	}
+	b.reference = price
+	return true
+}
+
+// Band returns the price range in force for one emiten, and whether one applies.
+func (r *Registry) Band(emitenID int64) (Band, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	b, ok := r.books[emitenID]
+	if !ok {
+		return Band{}, false
+	}
+	return r.bandLocked(b)
 }
 
 // Snapshot returns the current book state for one emiten.

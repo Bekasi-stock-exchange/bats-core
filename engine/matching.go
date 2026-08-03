@@ -229,6 +229,61 @@ func (e *Engine) Restore(o *Order) {
 	}
 }
 
+// Find returns the resting order with the given id, or nil if the book does not
+// hold it — because it never existed, already filled, or was already cancelled.
+//
+// Read-only: the caller must not mutate the returned order. It exists so the
+// registry can inspect an order (its owner, its side, its remainder) before
+// deciding whether cancelling it is allowed, without having to remove it first
+// and put it back when the answer is no.
+func (e *Engine) Find(orderID int64) *Order {
+	for _, o := range e.book.Bids {
+		if o.ID == orderID {
+			return o
+		}
+	}
+	for _, o := range e.book.Asks {
+		if o.ID == orderID {
+			return o
+		}
+	}
+	return nil
+}
+
+// CancelAtomic removes a resting order from the book, then hands it to commit.
+// If commit fails the order is put back at its original position and the error
+// is returned, leaving the book exactly as it was.
+//
+// Reinsertion is not an approximation of the original state, it is the original
+// state: insertBid/insertAsk place an order by price and Seq, and cancelling
+// changes neither — so the order lands back in the exact slot it came out of,
+// with its time priority intact. That is the same reasoning SubmitAtomic's
+// unwind rests on, and it is why a failed cancel is safe to retry.
+//
+// Returns whether an order with that id was resting at all. A cancel that finds
+// nothing never calls commit.
+func (e *Engine) CancelAtomic(orderID int64, commit func(*Order) error) (*Order, bool, error) {
+	o := e.Find(orderID)
+	if o == nil {
+		return nil, false, nil
+	}
+
+	if o.Side == Buy {
+		e.book.Bids = removeOrder(e.book.Bids, o)
+	} else {
+		e.book.Asks = removeOrder(e.book.Asks, o)
+	}
+	o.Status = Cancelled
+
+	if err := commit(o); err != nil {
+		// Put it back exactly where it was: same price, same Seq, same slot.
+		o.Status = Open
+		e.Restore(o)
+		return nil, true, err
+	}
+	return o, true, nil
+}
+
 // EstimateCost returns the worst-case notional a buy order could spend, and
 // whether that estimate is known.
 //
