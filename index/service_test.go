@@ -362,6 +362,61 @@ func TestCaptureTwiceAppendsTwoPoints(t *testing.T) {
 	}
 }
 
+func TestRecomputeFallsWhenPricesCollapse(t *testing.T) {
+	// Panic selling: every instrument's last price drops sharply between two
+	// Recompute calls, as consecutive sell-side trades walk the book down.
+	// MarketCap is a straight sum of price*shares and Value is cap/divisor*base
+	// with no other term, so a market-wide price collapse must lower Value —
+	// never raise it — regardless of how many trades produced that price.
+	emitens := []market.Emiten{
+		{ID: 1, Kode: "AAAA", ListedShares: 1000, IsActive: true},
+		{ID: 2, Kode: "BBBB", ListedShares: 1000, IsActive: true},
+		{ID: 3, Kode: "CCCC", ListedShares: 1000, IsActive: true},
+	}
+
+	svc, _, _ := fixture(t, emitens, map[int64]int64{1: 1000, 2: 1000, 3: 1000}, 3_000_000)
+	if err := svc.Recompute(context.Background()); err != nil {
+		t.Fatalf("Recompute: %v", err)
+	}
+	before, _ := svc.Current()
+	if !closeTo(before.Value, 100) {
+		t.Fatalf("Value = %v before panic selling, want 100", before.Value)
+	}
+
+	// A wave of panic selling drives every last price down to a quarter of what
+	// it was — the same shape as the reported incident (100 -> 400 is this
+	// inverted 4x, i.e. the bug would show up here as the level rising instead
+	// of falling to 25).
+	svc.prices = &stubPrices{prices: map[int64]int64{1: 250, 2: 250, 3: 250}}
+	if err := svc.Recompute(context.Background()); err != nil {
+		t.Fatalf("Recompute after panic selling: %v", err)
+	}
+
+	after, err := svc.Current()
+	if err != nil {
+		t.Fatalf("Current: %v", err)
+	}
+	if after.Value >= before.Value {
+		t.Errorf("Value = %v after panic selling, want it below %v (a market-wide price collapse must lower the index)",
+			after.Value, before.Value)
+	}
+	if !closeTo(after.Value, 25) {
+		t.Errorf("Value = %v after panic selling, want 25 (proportional to the 4x price drop)", after.Value)
+	}
+
+	// A further, smaller step down must keep moving the level in the same
+	// direction — this catches an oscillation/sign bug that only a single big
+	// jump would miss.
+	svc.prices = &stubPrices{prices: map[int64]int64{1: 100, 2: 100, 3: 100}}
+	if err := svc.Recompute(context.Background()); err != nil {
+		t.Fatalf("Recompute after further selling: %v", err)
+	}
+	final, _ := svc.Current()
+	if final.Value >= after.Value {
+		t.Errorf("Value = %v after further panic selling, want it below %v", final.Value, after.Value)
+	}
+}
+
 func TestCaptureBeforeComputationStoresNothing(t *testing.T) {
 	svc, repo, _ := fixture(t, nil, nil, 1)
 
