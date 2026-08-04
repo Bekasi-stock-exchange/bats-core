@@ -402,18 +402,21 @@ func (r *Registry) submitLocked(o *engine.Order, persist func([]engine.Trade) er
 	}
 
 	now := r.clock()
-	if b.halted(now) {
-		return nil, BookState{}, nil, ErrEmitenHalted
-	}
 
-	// Auto-rejection. A limit order priced outside the session band never reaches
-	// the book — which is the whole point: a rejected order cannot rest as the
-	// best price on its side, so nothing later can match against the level it
-	// asked for. A market order carries no price and is not checked here; what it
-	// pays is a resting order's price, and that was validated on its own way in.
+	// Auto-rejection is checked before the halt itself. A limit order priced
+	// outside the session band never reaches the book regardless of whether the
+	// instrument happens to be halted — the client's mistake is the price it
+	// asked for, and that is the error worth reporting. A market order carries no
+	// price and is not checked here; what it pays is a resting order's price, and
+	// that was validated on its own way in, so it falls through to the halt check
+	// below like every other order that passes the band.
 	band, hasBand := r.bandLocked(b)
 	if hasBand && o.Type == engine.Limit && !band.Allows(o.Price) {
 		return nil, BookState{}, nil, ErrOutsideBand
+	}
+
+	if b.halted(now) {
+		return nil, BookState{}, nil, ErrEmitenHalted
 	}
 
 	// A sell must be covered by shares that are not already promised to this

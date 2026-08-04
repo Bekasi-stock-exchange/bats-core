@@ -148,6 +148,34 @@ func TestTradeAtTheCeilingTripsTheBreaker(t *testing.T) {
 	}
 }
 
+// Once halted, an order priced outside the band must still be reported as
+// ErrOutsideBand rather than ErrEmitenHalted — the client's mistake is the price
+// it asked for, and that is true whether or not the instrument happens to be
+// halted right now. Checking the halt first would mask that mistake behind a
+// halt message that says nothing about why the order itself was bad.
+func TestOutsideBandTakesPriorityOverHaltedWhenBothApply(t *testing.T) {
+	reg, _, _ := testRegistry(t, 190, stubPolicy{bps: 3000, duration: 2 * time.Minute})
+
+	if _, err := submit(reg, 1, 1, engine.Sell, 247, 10); err != nil {
+		t.Fatalf("resting sell at the ceiling: %v", err)
+	}
+	if _, err := submit(reg, 2, 2, engine.Buy, 247, 10); err != nil {
+		t.Fatalf("buy at the ceiling: %v", err)
+	}
+
+	// The breaker has now tripped. An order priced far outside the band must
+	// still be rejected as ErrOutsideBand, not ErrEmitenHalted.
+	if _, err := submit(reg, 3, 1, engine.Sell, 1000, 10); !errors.Is(err, ErrOutsideBand) {
+		t.Errorf("err = %v, want ErrOutsideBand even while halted", err)
+	}
+
+	// An order priced inside the band still gets ErrEmitenHalted, since there is
+	// nothing wrong with its price — only with the instrument's state.
+	if _, err := submit(reg, 4, 1, engine.Sell, 200, 10); !errors.Is(err, ErrEmitenHalted) {
+		t.Errorf("err = %v, want ErrEmitenHalted for a price inside the band", err)
+	}
+}
+
 // A halt ends by itself. The registry decides that against the clock, so trading
 // reopens at the deadline whether or not the sweep has run yet.
 func TestHaltExpiresOnTheClock(t *testing.T) {
