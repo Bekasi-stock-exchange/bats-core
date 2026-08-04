@@ -233,7 +233,6 @@
                 "properties": {
                     "amount": {
                         "description": "Rupiah per share held. Required for DIVIDEND; must be omitted otherwise.",
-                        "example": 50,
                         "format": "int64",
                         "type": "integer"
                     },
@@ -260,13 +259,11 @@
                     },
                     "ratio_from": {
                         "description": "Old shares in the ratio. Required for SPLIT, REVERSE_SPLIT and BONUS;\nmust be omitted for DIVIDEND.\n\nA 1:2 split is ratio_from 1, ratio_to 2 — one share becomes two. A 2:1\nreverse split is ratio_from 2, ratio_to 1. A bonus of one new share per two\nheld is ratio_from 2, ratio_to 3: the holder ends with three where they had\ntwo.",
-                        "example": 1,
                         "format": "int64",
                         "type": "integer"
                     },
                     "ratio_to": {
                         "description": "New shares in the ratio. See ratio_from.",
-                        "example": 2,
                         "format": "int64",
                         "type": "integer"
                     },

@@ -24,13 +24,13 @@ type AnnounceRequest struct {
 	// reverse split is ratio_from 2, ratio_to 1. A bonus of one new share per two
 	// held is ratio_from 2, ratio_to 3: the holder ends with three where they had
 	// two.
-	RatioFrom int64 `json:"ratio_from,omitempty" format:"int64" example:"1"`
+	RatioFrom int64 `json:"ratio_from,omitempty" format:"int64"`
 
 	// New shares in the ratio. See ratio_from.
-	RatioTo int64 `json:"ratio_to,omitempty" format:"int64" example:"2"`
+	RatioTo int64 `json:"ratio_to,omitempty" format:"int64"`
 
 	// Rupiah per share held. Required for DIVIDEND; must be omitted otherwise.
-	Amount int64 `json:"amount,omitempty" format:"int64" example:"50"`
+	Amount int64 `json:"amount,omitempty" format:"int64"`
 
 	// When holdings are read to decide who receives what, as YYYY-MM-DD.
 	// Optional and informational: execution distributes to the holdings as they

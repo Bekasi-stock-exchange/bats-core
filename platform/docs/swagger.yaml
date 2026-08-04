@@ -198,7 +198,6 @@ components:
         amount:
           description: Rupiah per share held. Required for DIVIDEND; must be omitted
             otherwise.
-          example: 50
           format: int64
           type: integer
         jenis:
@@ -227,12 +226,10 @@ components:
             reverse split is ratio_from 2, ratio_to 1. A bonus of one new share per two
             held is ratio_from 2, ratio_to 3: the holder ends with three where they had
             two.
-          example: 1
           format: int64
           type: integer
         ratio_to:
           description: New shares in the ratio. See ratio_from.
-          example: 2
           format: int64
           type: integer
         record_date:
