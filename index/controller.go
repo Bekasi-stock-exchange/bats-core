@@ -13,11 +13,8 @@ type Controller struct {
 	svc *Service
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service) *Controller { return &Controller{svc: svc} }
 
-// Current handles GET /api/participant/index.
-//
 //	@Summary		Read the composite index
 //	@Description	The exchange-wide price level, computed IHSG-style: the summed
 //	@Description	free-float market capitalisation of every listed instrument, divided by
@@ -47,8 +44,6 @@ func (c *Controller) Current(w http.ResponseWriter, r *http.Request) {
 	c.current(w, r)
 }
 
-// AdminCurrent handles GET /api/admin/index.
-//
 //	@Summary		Read the composite index (admin)
 //	@Description	Identical to the participant view: the index is one number the whole
 //	@Description	exchange shares, and there is no broker-specific version of it. Offered
@@ -66,7 +61,7 @@ func (c *Controller) AdminCurrent(w http.ResponseWriter, r *http.Request) {
 	c.current(w, r)
 }
 
-// current serves the index level. Both tiers return the same payload — the index
+// Both tiers return the same payload — the index
 // is a single exchange-wide number, not a per-broker one — so the handler is
 // shared and only the guarding middleware differs. Keeping one body means the
 // two views cannot drift apart as fields are added.
@@ -85,8 +80,6 @@ func (c *Controller) current(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToIndexView(l))
 }
 
-// History handles GET /api/participant/index/history.
-//
 //	@Summary		Read the composite index history
 //	@Description	Past index levels, newest first. Each point carries the market
 //	@Description	capitalisation and divisor that produced it, so an old level stays
@@ -112,8 +105,6 @@ func (c *Controller) History(w http.ResponseWriter, r *http.Request) {
 	c.history(w, r)
 }
 
-// AdminHistory handles GET /api/admin/index/history.
-//
 //	@Summary		Read the composite index history (admin)
 //	@Description	Identical to the participant view — the same series, offered on the
 //	@Description	admin tier so an operator can read it with the key it already holds.
@@ -133,8 +124,8 @@ func (c *Controller) AdminHistory(w http.ResponseWriter, r *http.Request) {
 	c.history(w, r)
 }
 
-// history serves the index series. Shared between both tiers for the same reason
-// as current: one index, one payload, only the guarding middleware differs.
+// Shared between both tiers for the same reason as current: one index, one
+// payload, only the guarding middleware differs.
 func (c *Controller) history(w http.ResponseWriter, r *http.Request) {
 	from, err := parseTime(r, "from")
 	if err != nil {
@@ -162,8 +153,6 @@ func (c *Controller) history(w http.ResponseWriter, r *http.Request) {
 		httpx.NewPage(ToSnapshotViews(snaps), page, limit, total))
 }
 
-// Recompute handles POST /api/admin/index/recompute.
-//
 //	@Summary		Recompute the index now
 //	@Description	Revalues the whole market immediately and refreshes the published level,
 //	@Description	instead of waiting for the next trade to trigger it.
@@ -202,8 +191,6 @@ func (c *Controller) Recompute(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToIndexView(l))
 }
 
-// Capture handles POST /api/admin/index/capture.
-//
 //	@Summary		Record a history point now
 //	@Description	Writes the current level into the index history immediately, rather than
 //	@Description	waiting for the next automatic capture.
@@ -239,9 +226,8 @@ func (c *Controller) Capture(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, ToIndexView(l))
 }
 
-// parseTime reads an optional RFC 3339 query parameter. An absent parameter is
-// nil with no error; a present but malformed one is an error, so a typo becomes
-// a 400 rather than a silently unfiltered page.
+// An absent parameter is nil with no error; a present but malformed one is an
+// error, so a typo becomes a 400 rather than a silently unfiltered page.
 func parseTime(r *http.Request, key string) (*time.Time, error) {
 	raw := r.URL.Query().Get(key)
 	if raw == "" {

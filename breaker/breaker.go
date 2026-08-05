@@ -41,20 +41,17 @@ type Store interface {
 // reach matching from a background goroutine, which is exactly what the
 // registry's concurrency model forbids.
 type Books interface {
-	// ExpireHalts clears every halt whose deadline has passed, returning the
-	// emiten ids that resumed.
 	ExpireHalts() []int64
 
-	// Snapshot returns a book's current state, for broadcasting a resume.
+	// For broadcasting a resume.
 	Snapshot(emitenID int64) (market.BookState, error)
 }
 
-// Broadcaster publishes book state to subscribers. Satisfied by market.Hub.
+// Satisfied by market.Hub.
 type Broadcaster interface {
 	Broadcast(emitenID int64, state market.BookState)
 }
 
-// Supervisor records halts as they trip and ends them when they expire.
 type Supervisor struct {
 	books Books
 	store Store
@@ -76,8 +73,7 @@ type Supervisor struct {
 // tighter loop would take the registry's global lock for no gain.
 const DefaultInterval = time.Second
 
-// NewSupervisor wires the halt lifecycle to the registry, the store, and the
-// fan-out hub. hub may be nil, in which case resumes are not broadcast.
+// hub may be nil, in which case resumes are not broadcast.
 func NewSupervisor(books Books, store Store, hub Broadcaster, log *slog.Logger) *Supervisor {
 	return &Supervisor{
 		books:    books,
@@ -116,7 +112,7 @@ func (s *Supervisor) Halted(emitenID int64, price, reference int64, until time.T
 	}
 }
 
-// Resumed announces that a halt ended. It satisfies market.HaltObserver.
+// Satisfies market.HaltObserver.
 func (s *Supervisor) Resumed(emitenID int64) {
 	s.log.Info("trading resumed", "emiten_id", emitenID)
 }
@@ -145,8 +141,6 @@ func (s *Supervisor) Run(ctx context.Context) {
 	}
 }
 
-// sweep ends every halt whose deadline has passed, clears it from the store, and
-// publishes the reopened book.
 func (s *Supervisor) sweep(ctx context.Context) {
 	for _, emitenID := range s.books.ExpireHalts() {
 		s.Resumed(emitenID)

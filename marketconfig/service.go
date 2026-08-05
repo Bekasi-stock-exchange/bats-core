@@ -18,19 +18,16 @@ func invalid(format string, args ...any) error {
 	return ValidationError{Msg: fmt.Sprintf(format, args...)}
 }
 
-// Service reads and updates the exchange's trading parameters.
 type Service struct {
 	repo  Repository
 	cache *Cache
 }
 
-// NewService wires the config domain to its store and the cache the order path
-// reads.
 func NewService(repo Repository, cache *Cache) *Service {
 	return &Service{repo: repo, cache: cache}
 }
 
-// Load reads the stored settings into the cache. Called once at startup, before
+// Called once at startup, before
 // the server accepts a request, so the first order is validated against the
 // operator's configuration rather than the built-in default.
 func (s *Service) Load(ctx context.Context) error {
@@ -42,21 +39,16 @@ func (s *Service) Load(ctx context.Context) error {
 	return nil
 }
 
-// Current returns the configuration in force.
-//
 // Served from the cache, not the database. The cache is what the order path
 // actually enforces, so reading it means this endpoint reports the rule that is
 // really being applied rather than a stored value that might not have been
 // loaded yet.
 func (s *Service) Current() Settings { return s.cache.Settings() }
 
-// Halt returns the circuit breaker policy in force, read from the cache for the
-// same reason Current is: it is the configuration actually being enforced.
+// Read from the cache for the same reason Current is: it is the configuration
+// actually being enforced.
 func (s *Service) Halt() HaltPolicy { return s.cache.Halt() }
 
-// Update changes the trading parameters and returns the configuration now in
-// force.
-//
 // The write comes before the cache update, and the cache is set from what the
 // database returned rather than from the request. That ordering is what keeps
 // the enforced rule and the stored rule from diverging: a failed write leaves

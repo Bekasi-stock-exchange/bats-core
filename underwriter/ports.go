@@ -65,8 +65,7 @@ type AllocationRecord struct {
 type Repository interface {
 	ListUnderwriters(ctx context.Context) ([]Record, error)
 
-	// UnderwriterByParticipant looks one up by its broker code, which is the
-	// only code an underwriter has.
+	// The broker code is the only code an underwriter has.
 	UnderwriterByParticipant(ctx context.Context, kode string) (Record, error)
 
 	CreateUnderwriter(ctx context.Context, u Record) (Record, error)
@@ -77,7 +76,7 @@ type Repository interface {
 	// record of why, or record an offering whose shares never moved.
 	AllocateIPO(ctx context.Context, emitenID int64, price int64, allocs []Allocation) error
 
-	// AllocationsByEmiten returns an offering's syndicate, for the IPO detail view.
+	// For the IPO detail view.
 	AllocationsByEmiten(ctx context.Context, emitenID int64) ([]AllocationRecord, error)
 }
 
@@ -92,11 +91,11 @@ type Repository interface {
 // it for trading. An offering over an already-registered instrument uses only the
 // second.
 type EmitenLister interface {
-	// Create registers a dormant instrument. It is not tradeable on return.
+	// Registers a dormant instrument. It is not tradeable on return.
 	Create(ctx context.Context, req emiten.CreateRequest) (market.Emiten, error)
 
-	// Activate opens a dormant instrument for trading at its offering price,
-	// refusing one that is already active — which is what stops an instrument
+	// Opens a dormant instrument for trading at its offering price, refusing one
+	// that is already active — which is what stops an instrument
 	// being taken public twice.
 	Activate(ctx context.Context, kode string, ipoPrice int64) (market.Emiten, error)
 }

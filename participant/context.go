@@ -15,7 +15,6 @@ type Identity struct {
 // reading it can trust it came from a verified key.
 type ctxKey struct{}
 
-// NewContext returns a context carrying the authenticated broker.
 func NewContext(ctx context.Context, id Identity) context.Context {
 	return context.WithValue(ctx, ctxKey{}, id)
 }

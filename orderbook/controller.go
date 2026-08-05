@@ -13,14 +13,10 @@ type Controller struct {
 	svc *Service
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service) *Controller {
 	return &Controller{svc: svc}
 }
 
-// List handles GET /api/orderbook: paginated book states for every emiten,
-// ordered by emiten code.
-//
 //	@Summary		List order books
 //	@Description	Returns a paginated list of the current order books, ordered by emiten code.
 //	@Tags			participant
@@ -39,9 +35,6 @@ func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, httpx.NewPage(ToBookSnapshots(states), page, limit, total))
 }
 
-// Get handles GET /api/orderbook/{kode}: the current book for one emiten,
-// aggregated by price level.
-//
 //	@Summary		Get one order book
 //	@Description	Returns the book aggregated by price level. Bids are highest price
 //	@Description	first; asks are lowest price first.
@@ -65,7 +58,6 @@ func (c *Controller) Get(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToBookSnapshot(state))
 }
 
-// writeBookError maps a service error onto the HTTP response.
 func writeBookError(w http.ResponseWriter, err error, kode string) {
 	if errors.Is(err, ErrEmitenNotFound) {
 		httpx.WriteError(w, http.StatusNotFound, "unknown emiten: "+kode)

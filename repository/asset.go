@@ -18,15 +18,13 @@ type Asset struct {
 	db
 }
 
-// NewAsset returns a holdings repository backed by pool.
 func NewAsset(pool *pgxpool.Pool) *Asset {
 	return &Asset{db{pool: pool}}
 }
 
 var _ assets.Repository = (*Asset)(nil)
 
-// LoadHoldings returns every broker holding, to seed the in-memory ledger at
-// startup.
+// Seeds the in-memory ledger at startup.
 func (r *Asset) LoadHoldings(ctx context.Context) ([]market.Holding, error) {
 	return postgres.QueryAll(ctx, r.pool, "broker holdings",
 		`SELECT participant_id, emiten_id, amount_shared FROM broker_assets_list`,
@@ -64,8 +62,8 @@ const holdingsQuery = `
 	ORDER BY b.participant_id, b.emiten_id
 	LIMIT $2 OFFSET $3`
 
-// scanHolding maps a holdings row, leaving LastPrice nil when the emiten has never
-// traded and IPOPrice nil when it was listed without one.
+// Leaves LastPrice nil when the emiten has never traded and IPOPrice nil when it
+// was listed without one.
 func scanHolding(rows pgx.Rows) (assets.Record, error) {
 	var rec assets.Record
 	err := rows.Scan(&rec.ParticipantID, &rec.EmitenID, &rec.AmountShared, &rec.UpdatedAt,
@@ -73,15 +71,14 @@ func scanHolding(rows pgx.Rows) (assets.Record, error) {
 	return rec, err
 }
 
-// ListHoldings returns one page of holdings. A nil participantID means every
-// broker; a non-nil one scopes to that broker alone.
+// A nil participantID means every broker; a non-nil one scopes to that broker
+// alone.
 func (r *Asset) ListHoldings(ctx context.Context, participantID *int64, limit, offset int) ([]assets.Record, error) {
 	return postgres.QueryAll(ctx, r.pool, "broker holdings page",
 		holdingsQuery, scanHolding, participantID, limit, offset)
 }
 
-// CountHoldings returns the total number of holdings matching the same filter, for
-// the pagination envelope.
+// Same filter as ListHoldings, for the pagination envelope.
 func (r *Asset) CountHoldings(ctx context.Context, participantID *int64) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `

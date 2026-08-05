@@ -18,15 +18,13 @@ type Wallet struct {
 	db
 }
 
-// NewWallet returns a wallet repository backed by pool.
 func NewWallet(pool *pgxpool.Pool) *Wallet {
 	return &Wallet{db{pool: pool}}
 }
 
 var _ wallet.Repository = (*Wallet)(nil)
 
-// LoadWallets returns every broker wallet, to seed the in-memory cash ledger at
-// startup.
+// Seeds the in-memory cash ledger at startup.
 func (r *Wallet) LoadWallets(ctx context.Context) ([]market.Wallet, error) {
 	return postgres.QueryAll(ctx, r.pool, "broker wallets",
 		`SELECT participant_id, balance FROM broker_wallet`,
@@ -43,8 +41,8 @@ func scanWallet(rows pgx.Rows) (wallet.Record, error) {
 	return rec, err
 }
 
-// ListWallets returns one page of wallets. A nil participantID means every
-// broker; a non-nil one scopes to that broker alone.
+// A nil participantID means every broker; a non-nil one scopes to that broker
+// alone.
 func (r *Wallet) ListWallets(ctx context.Context, participantID *int64, limit, offset int) ([]wallet.Record, error) {
 	return postgres.QueryAll(ctx, r.pool, "broker wallets page", `
 		SELECT participant_id, balance, updated_at
@@ -55,8 +53,7 @@ func (r *Wallet) ListWallets(ctx context.Context, participantID *int64, limit, o
 		scanWallet, participantID, limit, offset)
 }
 
-// CountWallets returns the total number of wallets matching the same filter,
-// for the pagination envelope.
+// Same filter as ListWallets, for the pagination envelope.
 func (r *Wallet) CountWallets(ctx context.Context, participantID *int64) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `
@@ -68,7 +65,6 @@ func (r *Wallet) CountWallets(ctx context.Context, participantID *int64) (int, e
 	return n, nil
 }
 
-// FindWallet returns one broker's wallet.
 func (r *Wallet) FindWallet(ctx context.Context, participantID int64) (wallet.Record, error) {
 	row, err := r.pool.Query(ctx, `
 		SELECT participant_id, balance, updated_at
@@ -85,8 +81,7 @@ func (r *Wallet) FindWallet(ctx context.Context, participantID int64) (wallet.Re
 	return scanWallet(row)
 }
 
-// AdjustWallet applies delta to one broker's balance and returns the row as it
-// stands afterwards.
+// Returns the row as it stands afterwards.
 //
 // The row may not exist yet — a broker registered but never funded has none —
 // hence the ensure-row insert. It cannot be a single ON CONFLICT DO UPDATE
@@ -126,8 +121,7 @@ func (r *Wallet) AdjustWallet(ctx context.Context, participantID, delta int64) (
 	return rec, nil
 }
 
-// applyWalletDeltas moves cash between brokers as part of the trade that caused
-// it, so a wallet can never disagree with the trades behind it.
+// Moves cash as part of the trade that caused it, so a wallet can never disagree with the trades behind it.
 //
 // The caller nets and sorts the deltas, the same reasoning as
 // applyAssetDeltas: netting keeps one batch from targeting the same participant

@@ -95,13 +95,10 @@ const MaxBPS int64 = 10_000
 // field. Mirrors the CHECK in migration 015.
 const MaxHaltDuration = 24 * time.Hour
 
-// Repository reads and writes the stored settings.
-//
 // Declared here, in the package that consumes it, and satisfied by the
 // repository package — so this package depends on a behaviour rather than on a
 // database handle.
 type Repository interface {
-	// LoadSettings returns the single stored configuration row.
 	LoadSettings(ctx context.Context) (Settings, error)
 
 	// SaveSettings overwrites the stored configuration and returns what was

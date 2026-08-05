@@ -2,8 +2,8 @@ package market
 
 import "sync"
 
-// Hub is a minimal fan-out of book state to subscribers, keyed by emiten id.
-// Each subscriber owns a buffered channel. The flow is strictly one-way: the
+// Hub fans book state out to subscribers, keyed by emiten id. Each subscriber
+// owns a buffered channel. The flow is strictly one-way: the
 // order domain publishes, the orderbook domain's WebSocket controller receives.
 type Hub struct {
 	mu   sync.Mutex
@@ -15,15 +15,12 @@ type Subscription struct {
 	ch chan BookState
 }
 
-// Updates is the receive-only stream of book states for this subscription.
 func (s *Subscription) Updates() <-chan BookState { return s.ch }
 
-// NewHub returns an empty hub.
 func NewHub() *Hub {
 	return &Hub{subs: make(map[int64]map[*Subscription]struct{})}
 }
 
-// Subscribe registers a new subscriber for an emiten and returns it.
 func (h *Hub) Subscribe(emitenID int64) *Subscription {
 	sub := &Subscription{ch: make(chan BookState, 16)}
 	h.mu.Lock()
@@ -35,7 +32,6 @@ func (h *Hub) Subscribe(emitenID int64) *Subscription {
 	return sub
 }
 
-// Unsubscribe removes a subscriber.
 func (h *Hub) Unsubscribe(emitenID int64, sub *Subscription) {
 	h.mu.Lock()
 	if set := h.subs[emitenID]; set != nil {
@@ -47,8 +43,8 @@ func (h *Hub) Unsubscribe(emitenID int64, sub *Subscription) {
 	h.mu.Unlock()
 }
 
-// Broadcast pushes state to every subscriber of an emiten. A slow consumer whose
-// buffer is full is skipped rather than blocking the matching path.
+// A slow consumer whose buffer is full is skipped rather than blocking the
+// matching path.
 func (h *Hub) Broadcast(emitenID int64, state BookState) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

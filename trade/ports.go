@@ -46,8 +46,6 @@ type Candle struct {
 	Volume int64
 }
 
-// Transaction is one fill seen from a particular broker's side.
-//
 // Side and CounterpartyID are relative to the broker being queried: the same
 // execution reads "buy"/PD for YP and "sell"/YP for PD.
 type Transaction struct {
@@ -67,8 +65,6 @@ type Filter struct {
 	ParticipantID *int64
 }
 
-// Repository reads executions.
-//
 // Declared here and satisfied by the repository package, so this package depends
 // on a behaviour rather than on a database handle.
 type Repository interface {

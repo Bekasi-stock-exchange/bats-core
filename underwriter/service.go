@@ -31,7 +31,6 @@ func invalid(format string, args ...any) error {
 	return ValidationError{Msg: fmt.Sprintf(format, args...)}
 }
 
-// Service registers underwriters and runs offerings.
 type Service struct {
 	repo   Repository
 	lister EmitenLister
@@ -39,19 +38,15 @@ type Service struct {
 	reg    *market.Registry
 }
 
-// NewService wires the underwriter domain to the emiten domain and the market
-// kernel.
 func NewService(repo Repository, lister EmitenLister, dir *market.Directory, reg *market.Registry) *Service {
 	return &Service{repo: repo, lister: lister, dir: dir, reg: reg}
 }
 
-// List returns every registered underwriter, ordered by participant code.
+// Ordered by participant code.
 func (s *Service) List(ctx context.Context) ([]Record, error) {
 	return s.repo.ListUnderwriters(ctx)
 }
 
-// Create permits an existing broker to underwrite offerings.
-//
 // The participant must be registered: an underwriter's whole identity is that
 // participant's, and allocations credit its holdings, so one that named nothing
 // could be handed shares it could never sell. Registering the same broker twice is
@@ -73,8 +68,6 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Record, error)
 	})
 }
 
-// IPO lists an instrument and hands its shares to the underwriting syndicate.
-//
 // Order matters and is not arbitrary. The syndicate is resolved and validated
 // first, against nothing but already-loaded state, so a bad request fails before
 // anything is written. Only then is the emiten created — which is the step that
@@ -106,8 +99,7 @@ func (s *Service) IPO(ctx context.Context, req IPORequest) (market.Emiten, []All
 	return s.place(ctx, req.Kode, req.IPOPrice, allocs)
 }
 
-// IPOExisting runs an offering over an instrument that is already registered but
-// has never been taken public.
+// For an instrument that is already registered but has never been taken public.
 //
 // This is the other half of the two-step listing: an instrument enters through
 // POST /api/admin/emiten dormant, and this is what opens it for trading.
@@ -146,7 +138,7 @@ func (s *Service) IPOExisting(ctx context.Context, kode string, req ExistingIPOR
 	return s.place(ctx, kode, req.IPOPrice, allocs)
 }
 
-// place completes an offering over a registered, dormant instrument: it opens the
+// Completes an offering over a registered, dormant instrument: it opens the
 // instrument at the offering price, writes the allocation, and credits the
 // in-memory ledger.
 //
@@ -182,7 +174,7 @@ func (s *Service) place(ctx context.Context, kode string, ipoPrice int64, allocs
 	return e, records, nil
 }
 
-// translate turns the emiten domain's rejections into this package's, so a bad
+// Turns the emiten domain's rejections into this package's, so a bad
 // listing is a 400 rather than a 500. They arrive as emiten.ValidationError, which
 // this package's controller does not recognise.
 func (s *Service) translate(err error) error {
@@ -196,8 +188,8 @@ func (s *Service) translate(err error) error {
 	return err
 }
 
-// validateOffering checks the parts of a request that need no lookups: the
-// instrument's own numbers, and the shape of the syndicate.
+// Checks the parts of a request that need no lookups: the instrument's own
+// numbers, and the shape of the syndicate.
 //
 // The syndicate rules encode what the two roles mean. Exactly one lead guarantees
 // the offering, so there cannot be none or two. The lead carries the largest
@@ -256,8 +248,6 @@ func validateOffering(ipoPrice, listedShares, unlistedShares int64, syndicate []
 // maxInt64 guards the notional multiplications.
 const maxInt64 = int64(^uint64(0) >> 1)
 
-// resolveSyndicate turns broker codes into allocations.
-//
 // The codes are participant codes: an underwriter is a participant with the
 // permission, so a member that is not registered as one is rejected here rather
 // than silently underwriting.

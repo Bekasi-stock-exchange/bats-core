@@ -15,13 +15,10 @@ type Controller struct {
 	codes Codes
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service, codes Codes) *Controller {
 	return &Controller{svc: svc, codes: codes}
 }
 
-// List handles GET /api/admin/corporate-actions.
-//
 //	@Summary		List corporate actions
 //	@Description	Every announced, executed and cancelled aksi korporasi, newest first.
 //	@Description
@@ -55,8 +52,6 @@ func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 		httpx.NewPage(c.codes.ToActionViews(recs), page, limit, total))
 }
 
-// Detail handles GET /api/admin/corporate-actions/{id}.
-//
 //	@Summary		Corporate action detail
 //	@Description	One aksi korporasi and every ledger movement it caused: which broker held
 //	@Description	how many shares before it, how many after, and how much cash it received.
@@ -92,8 +87,6 @@ func (c *Controller) Detail(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, c.codes.ToDetailView(rec, entries))
 }
 
-// Announce handles POST /api/admin/corporate-actions.
-//
 //	@Summary		Announce a corporate action
 //	@Description	Records an aksi korporasi that will take effect later. **Nothing moves
 //	@Description	here** — no holding is restated and no wallet is credited until
@@ -142,8 +135,6 @@ func (c *Controller) Announce(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, c.codes.ToActionView(rec))
 }
 
-// Execute handles POST /api/admin/corporate-actions/{id}/execute.
-//
 //	@Summary		Execute a corporate action
 //	@Description	Applies an announced action to the ledgers. **This cannot be undone.**
 //	@Description
@@ -192,8 +183,6 @@ func (c *Controller) Execute(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, c.codes.ToDetailView(rec, entries))
 }
 
-// Cancel handles POST /api/admin/corporate-actions/{id}/cancel.
-//
 //	@Summary		Cancel a corporate action
 //	@Description	Abandons an announced action before it takes effect.
 //	@Description
@@ -228,8 +217,6 @@ func (c *Controller) Cancel(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, c.codes.ToActionView(rec))
 }
 
-// parseID reads the {id} path value, writing a 400 and reporting false when it is
-// not a positive integer.
 func parseID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
@@ -239,7 +226,6 @@ func parseID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
-// writeError maps a service error onto the response.
 func (c *Controller) writeError(w http.ResponseWriter, err error, kode string) {
 	var invalid ValidationError
 	switch {

@@ -13,7 +13,6 @@ type Master struct {
 	db
 }
 
-// NewMaster returns a master-data repository backed by pool.
 func NewMaster(pool *pgxpool.Pool) *Master {
 	return &Master{db{pool: pool}}
 }

@@ -17,7 +17,6 @@ type Order struct {
 	db
 }
 
-// NewOrder returns an order repository backed by pool.
 func NewOrder(pool *pgxpool.Pool) *Order {
 	return &Order{db{pool: pool}}
 }
@@ -25,7 +24,7 @@ func NewOrder(pool *pgxpool.Pool) *Order {
 // compile-time check that Order satisfies the interface the order package declares.
 var _ order.Repository = (*Order)(nil)
 
-// NextOrderID reserves the next order id from the table's identity sequence.
+// Reserves the id from the table's identity sequence.
 //
 // The id is handed out before the row exists because trades reference it as a
 // foreign key, while the row itself can only be written after matching has decided
@@ -40,9 +39,8 @@ func (r *Order) NextOrderID(ctx context.Context) (int64, error) {
 	return id, nil
 }
 
-// SaveExecution writes a whole matching outcome in one transaction: the incoming
-// order, the trades it produced, and the fills against the resting orders it
-// consumed.
+// One transaction: the incoming order, the trades it produced, and the fills
+// against the resting orders it consumed.
 //
 // All of it commits or none of it does. Previously these were separate autocommit
 // statements, so a failure part-way left the database holding a partial outcome
@@ -77,8 +75,6 @@ func (r *Order) SaveExecution(ctx context.Context, ex order.Execution) error {
 	return nil
 }
 
-// CancelOrder marks a resting order cancelled, reporting whether a row changed.
-//
 // The WHERE clause pins status = 'open' rather than matching on id alone. That
 // is the guard against cancelling something that is no longer cancellable: an
 // order the matching engine filled a moment earlier is already 'filled', and an
@@ -98,7 +94,6 @@ func (r *Order) CancelOrder(ctx context.Context, orderID int64) (bool, error) {
 	return tag.RowsAffected() > 0, nil
 }
 
-// ListOrders returns one page of order history, newest first.
 func (r *Order) ListOrders(ctx context.Context, f order.OrderFilter, limit, offset int) ([]order.OrderRecord, error) {
 	return postgres.QueryAll(ctx, r.pool, "orders page", `
 		SELECT id, emiten_id, participant_id, side, type, price, qty, remaining, status, seq
@@ -116,7 +111,7 @@ func (r *Order) ListOrders(ctx context.Context, f order.OrderFilter, limit, offs
 		}, f.EmitenID, f.ParticipantID, f.Status, limit, offset)
 }
 
-// CountOrders totals the same filter, for the pagination envelope.
+// Same filter as ListOrders, for the pagination envelope.
 func (r *Order) CountOrders(ctx context.Context, f order.OrderFilter) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `
@@ -131,7 +126,6 @@ func (r *Order) CountOrders(ctx context.Context, f order.OrderFilter) (int, erro
 	return n, nil
 }
 
-// MaxSeqs returns the highest seq already used in orders and in trades.
 func (r *Order) MaxSeqs(ctx context.Context) (maxOrderSeq, maxTradeSeq int64, err error) {
 	if err = r.pool.QueryRow(ctx, `SELECT COALESCE(max(seq), 0) FROM orders`).Scan(&maxOrderSeq); err != nil {
 		return 0, 0, fmt.Errorf("repository: max order seq: %w", err)
@@ -142,8 +136,8 @@ func (r *Order) MaxSeqs(ctx context.Context) (maxOrderSeq, maxTradeSeq int64, er
 	return maxOrderSeq, maxTradeSeq, nil
 }
 
-// LoadOpenOrders returns every order still open, sorted by Seq ascending, to
-// rebuild the in-memory book and its reservations at startup.
+// Sorted by Seq ascending, to rebuild the in-memory book and its reservations at
+// startup.
 func (r *Order) LoadOpenOrders(ctx context.Context) ([]market.OpenOrder, error) {
 	return postgres.QueryAll(ctx, r.pool, "open orders", `
 		SELECT id, emiten_id, participant_id, side, type, price, qty, remaining, seq
@@ -158,8 +152,8 @@ func (r *Order) LoadOpenOrders(ctx context.Context) ([]market.OpenOrder, error) 
 		})
 }
 
-// insertOrder writes the order row at its final post-matching state, with the id
-// reserved earlier and the sequence number the engine assigned.
+// Writes the row at its final post-matching state, with the id reserved earlier
+// and the sequence number the engine assigned.
 func insertOrder(ctx context.Context, tx pgx.Tx, o order.OrderRecord) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO orders (id, emiten_id, participant_id, side, type, price, qty, remaining, status, seq)
@@ -172,9 +166,8 @@ func insertOrder(ctx context.Context, tx pgx.Tx, o order.OrderRecord) error {
 	return nil
 }
 
-// applyFills decrements each resting order's remaining by the quantity it traded
-// and marks it filled when it reaches zero. Derived status and derived remaining
-// are set in one statement so they cannot disagree.
+// Derived status and derived remaining are set in one statement so they cannot
+// disagree.
 func applyFills(ctx context.Context, tx pgx.Tx, fills []order.Fill) error {
 	if len(fills) == 0 {
 		return nil

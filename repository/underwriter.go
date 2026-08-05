@@ -17,14 +17,13 @@ type Underwriter struct {
 	db
 }
 
-// NewUnderwriter returns an underwriter repository backed by pool.
 func NewUnderwriter(pool *pgxpool.Pool) *Underwriter {
 	return &Underwriter{db{pool: pool}}
 }
 
 var _ underwriter.Repository = (*Underwriter)(nil)
 
-// ListUnderwriters returns every registered underwriter, ordered by broker code.
+// Ordered by broker code.
 //
 // The join is for the ordering only: an underwriter has no code of its own, and
 // ordering by participant_id would sort by insertion order rather than by anything
@@ -39,9 +38,8 @@ func (r *Underwriter) ListUnderwriters(ctx context.Context) ([]underwriter.Recor
 		scanUnderwriter)
 }
 
-// UnderwriterByParticipant looks up one underwriter by its broker code, returning
-// underwriter.ErrNotFound when that broker is not registered as one — so the
-// service can answer 400 rather than 500.
+// Returns underwriter.ErrNotFound when that broker is not registered as one — so
+// the service can answer 400 rather than 500.
 func (r *Underwriter) UnderwriterByParticipant(ctx context.Context, kode string) (underwriter.Record, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT u.id, u.participant_id, u.is_active
@@ -73,9 +71,6 @@ func scanUnderwriter(rows pgx.Rows) (underwriter.Record, error) {
 	return rec, err
 }
 
-// CreateUnderwriter registers a broker as an underwriter and returns the record
-// with its assigned id.
-//
 // Registering the same broker twice violates the unique index on participant_id
 // and surfaces as ErrDuplicate rather than a raw driver error, so the controller
 // can answer 409 instead of 500.
@@ -97,8 +92,8 @@ func (r *Underwriter) CreateUnderwriter(ctx context.Context, u underwriter.Recor
 	return u, nil
 }
 
-// AllocateIPO writes an offering's allocations: the ipo_allocation audit rows and
-// the broker_assets_list credits that actually move the shares.
+// Writes the ipo_allocation audit rows and the broker_assets_list credits that
+// actually move the shares.
 //
 // One transaction, because the two halves are the same fact. Credits without audit
 // rows are shares nobody can explain; audit rows without credits are an offering
@@ -155,8 +150,8 @@ func (r *Underwriter) AllocateIPO(ctx context.Context, emitenID, price int64, al
 	return nil
 }
 
-// AllocationsByEmiten returns an offering's syndicate, largest tranche first —
-// the order the syndicate is actually weighted in. Ties break on the broker code
+// Largest tranche first — the order the syndicate is actually weighted in. Ties
+// break on the broker code
 // so the ordering is total, and the same offering always reads back identically.
 //
 // It joins participant only: the underwriter row carries no name, and the shares

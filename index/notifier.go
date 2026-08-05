@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// captureInterval is how often a computed level is written to history.
+// How often a computed level is written to history.
 //
 // The index is recomputed on every trade but stored far less often: a row per
 // execution would grow the history at the speed of the market while telling a
@@ -38,7 +38,7 @@ type Notifier struct {
 	done     chan struct{}
 }
 
-// NewNotifier returns a notifier driving svc. Call Run to start it.
+// Call Run to start it.
 func NewNotifier(svc *Service) *Notifier {
 	return &Notifier{
 		svc:    svc,
@@ -48,8 +48,8 @@ func NewNotifier(svc *Service) *Notifier {
 	}
 }
 
-// TradesExecuted announces that trades committed. It never blocks: if a
-// recomputation is already pending, this one is folded into it.
+// Never blocks: if a recomputation is already pending, this one is folded into
+// it.
 func (n *Notifier) TradesExecuted() {
 	select {
 	case n.signal <- struct{}{}:
@@ -57,7 +57,7 @@ func (n *Notifier) TradesExecuted() {
 	}
 }
 
-// Run recomputes on each signal and captures history on a ticker, until Close.
+// Recomputes on each signal and captures history on a ticker, until Close.
 //
 // Both live on this one goroutine so that a capture can never read a level that
 // is halfway through being replaced, and so recomputation stays serialized
@@ -95,7 +95,7 @@ func (n *Notifier) Run(ctx context.Context) {
 	}
 }
 
-// Close stops the loop and waits for it to finish.
+// Stops the loop and waits for it to finish.
 //
 // Idempotent, so a shutdown path that runs twice does not panic on a closed
 // channel. It does not capture a final snapshot: at shutdown the database may

@@ -50,14 +50,11 @@ func NewBand(reference, bps int64) Band {
 // it cannot drift the way a threshold can.
 const bpsDenominator int64 = 10_000
 
-// Allows reports whether a price may be quoted within this band.
 func (b Band) Allows(price int64) bool {
 	return price >= b.Floor && price <= b.Ceiling
 }
 
-// AtLimit reports whether a price has reached either edge of the band.
-//
-// This is the circuit breaker's trigger condition, and it is deliberately
+// Reaching either edge of the band is the circuit breaker's trigger condition, and it is deliberately
 // distinct from !Allows: a price outside the band never executes, because
 // auto-rejection refuses it at the gate. The breaker fires on a price that was
 // admitted and printed — one that reached the edge legally. Without this

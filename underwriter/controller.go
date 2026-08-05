@@ -17,13 +17,10 @@ type Controller struct {
 	duplicate func(error) bool
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service, codes Codes, isDuplicate func(error) bool) *Controller {
 	return &Controller{svc: svc, codes: codes, duplicate: isDuplicate}
 }
 
-// List handles GET /api/admin/underwriters.
-//
 //	@Summary		List underwriters
 //	@Description	Every broker permitted to underwrite offerings, ordered by code.
 //	@Description
@@ -49,8 +46,6 @@ func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, c.codes.ToUnderwriterViews(recs))
 }
 
-// Create handles POST /api/admin/underwriters.
-//
 //	@Summary		Permit a broker to underwrite
 //	@Description	Grants an existing broker the right to underwrite offerings. That is all an
 //	@Description	underwriter is — a participant with a permission — so the request carries
@@ -88,8 +83,6 @@ func (c *Controller) Create(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, c.codes.ToUnderwriterView(rec))
 }
 
-// IPO handles POST /api/admin/ipo.
-//
 //	@Summary		Run an IPO
 //	@Description	Lists an instrument and hands its shares to the underwriting syndicate in
 //	@Description	one step — an instrument whose shares sit nowhere is not yet an offering.
@@ -129,8 +122,6 @@ func (c *Controller) IPO(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, ToIPOResponse(e, allocs))
 }
 
-// IPOExisting handles POST /api/admin/emiten/{kode}/ipo.
-//
 //	@Summary		Run an IPO over a registered instrument
 //	@Description	Takes an instrument that was registered through POST /api/admin/emiten —
 //	@Description	and is therefore still **dormant** — public: it hands the shares to the
@@ -179,7 +170,6 @@ func (c *Controller) IPOExisting(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, ToIPOResponse(e, allocs))
 }
 
-// writeError maps a service error onto the response.
 func (c *Controller) writeError(w http.ResponseWriter, err error, kode string) {
 	var invalid ValidationError
 	switch {

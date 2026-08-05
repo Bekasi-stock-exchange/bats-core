@@ -2,7 +2,6 @@ package participant
 
 import "time"
 
-// ToParticipantView converts a stored broker into its API shape.
 func ToParticipantView(rec Record) ParticipantView {
 	view := ParticipantView{
 		Kode:         rec.Kode,
@@ -17,8 +16,7 @@ func ToParticipantView(rec Record) ParticipantView {
 	return view
 }
 
-// ToParticipantViews converts a batch, preserving order. Always non-nil so the
-// field marshals as [] rather than null.
+// Always non-nil so the field marshals as [] rather than null.
 func ToParticipantViews(recs []Record) []ParticipantView {
 	out := make([]ParticipantView, 0, len(recs))
 	for _, rec := range recs {
@@ -27,7 +25,6 @@ func ToParticipantViews(recs []Record) []ParticipantView {
 	return out
 }
 
-// ToIssuedKeyResponse pairs a broker with the key just minted for it.
 func ToIssuedKeyResponse(rec Record, key string) IssuedKeyResponse {
 	return IssuedKeyResponse{Kode: rec.Kode, Nama: rec.Nama, APIKey: key}
 }

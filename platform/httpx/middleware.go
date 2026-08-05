@@ -8,8 +8,6 @@ type Middleware func(http.HandlerFunc) http.HandlerFunc
 // AdminKeyHeader is the header carrying the static administrative key.
 const AdminKeyHeader = "X-API-Key"
 
-// RequireStaticKey rejects any request whose X-API-Key header does not match key.
-//
 // This is the admin tier: one shared secret from configuration, compared in
 // process. Brokers authenticate differently — see participant.RequireKey, which
 // resolves a per-broker key against the database.

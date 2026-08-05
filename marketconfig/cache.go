@@ -21,9 +21,7 @@ type Cache struct {
 	settings Settings
 }
 
-// NewCache returns a cache holding the built-in defaults.
-//
-// It is seeded rather than left zero deliberately. A zero MinPrice would mean
+// Seeded with the built-in defaults rather than left zero deliberately. A zero MinPrice would mean
 // "no floor" and a zero halt threshold would mean "halt on any movement at all",
 // so a cache read before Load — a startup ordering mistake — would either
 // silently disable a rule or trip a breaker on the first trade. Seeding makes
@@ -37,15 +35,13 @@ func NewCache() *Cache {
 	}}
 }
 
-// Settings returns a copy of the current configuration.
 func (c *Cache) Settings() Settings {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.settings
 }
 
-// MinPrice returns the current limit-order price floor. It is the one field the
-// order path needs, exposed directly so the hot path takes the lock once and
+// The one field the order path needs, exposed directly so the hot path takes the lock once and
 // copies a single int rather than the whole struct.
 func (c *Cache) MinPrice() int64 {
 	c.mu.RLock()
@@ -66,7 +62,6 @@ type HaltPolicy struct {
 	Duration  time.Duration
 }
 
-// Halt returns the circuit breaker policy in force.
 func (c *Cache) Halt() HaltPolicy {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -77,25 +72,23 @@ func (c *Cache) Halt() HaltPolicy {
 	}
 }
 
-// EmitenBandBPS returns the single-emiten band threshold in basis points, and
-// HaltDuration how long a triggered halt lasts. Together they satisfy the
-// BreakerPolicy interface the market registry declares, so the registry reads
-// live configuration without importing this package.
+// EmitenBandBPS and HaltDuration together satisfy the BreakerPolicy interface
+// the market registry declares, so the registry reads live configuration
+// without importing this package.
 func (c *Cache) EmitenBandBPS() int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.settings.EmitenHaltBPS
 }
 
-// HaltDuration returns how long a triggered halt lasts.
 func (c *Cache) HaltDuration() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.settings.HaltDuration
 }
 
-// Set replaces the cached configuration. Called at startup with what the
-// database holds, and after every committed update.
+// Called at startup with what the database holds, and after every committed
+// update.
 func (c *Cache) Set(s Settings) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

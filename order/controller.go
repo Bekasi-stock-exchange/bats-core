@@ -16,13 +16,10 @@ type Controller struct {
 	svc *Service
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service) *Controller {
 	return &Controller{svc: svc}
 }
 
-// Submit handles POST /api/orders.
-//
 //	@Summary		Submit a new order
 //	@Description	Runs the order through continuous matching and returns the trades it
 //	@Description	produced. A limit order with leftover quantity rests in the book (open);
@@ -93,8 +90,6 @@ func (c *Controller) Submit(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToSubmitOrderResponse(res))
 }
 
-// Cancel handles POST /api/participant/orders/cancel.
-//
 //	@Summary		Cancel a resting order
 //	@Description	Withdraws an order that is still resting in the book and releases
 //	@Description	what it had reserved — shares for a sell, cash for a buy — so the
@@ -157,8 +152,6 @@ func (c *Controller) Cancel(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToCancelOrderResponse(res))
 }
 
-// List handles GET /api/admin/orders.
-//
 //	@Summary		List order history
 //	@Description	Every order ever submitted, newest first, optionally filtered by emiten,
 //	@Description	participant, or status. This is the audit trail; the live book is served
@@ -190,9 +183,8 @@ func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 		httpx.NewPage(ToOrderHistoryViews(records, c.svc.Directory()), page, limit, total))
 }
 
-// writeSubmitError maps a service error onto the HTTP response. A broken business
-// rule is the client's fault and carries its own message; anything else is ours
-// and is reported without leaking internals.
+// A broken business rule is the client's fault and carries its own message;
+// anything else is ours and is reported without leaking internals.
 func writeSubmitError(w http.ResponseWriter, err error) {
 	var invalid ValidationError
 	if errors.As(err, &invalid) {
@@ -202,10 +194,9 @@ func writeSubmitError(w http.ResponseWriter, err error) {
 	httpx.WriteError(w, http.StatusInternalServerError, "persist order failed")
 }
 
-// writeCancelError is writeSubmitError for the cancel path. Same split — a
-// broken business rule is the client's, anything else is ours — with a message
-// that names what actually failed rather than a persist the caller never asked
-// for.
+// Same split as writeSubmitError — a broken business rule is the client's,
+// anything else is ours — with a message that names what actually failed rather
+// than a persist the caller never asked for.
 func writeCancelError(w http.ResponseWriter, err error) {
 	var invalid ValidationError
 	if errors.As(err, &invalid) {

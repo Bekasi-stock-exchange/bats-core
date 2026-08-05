@@ -11,9 +11,6 @@ import (
 // being checked against the wrong secret.
 const KeyHeader = "X-Participant-Key"
 
-// RequireKey authenticates a broker by its API key and puts the resolved identity
-// in the request context.
-//
 // Missing, malformed, and revoked keys all produce the same 401 with the same
 // body. Distinguishing them would turn this into an oracle for probing which keys
 // exist.

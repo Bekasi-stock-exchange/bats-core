@@ -9,8 +9,7 @@ type Level struct {
 	Qty   int64
 }
 
-// BookState is a point-in-time view of one emiten's order book, aggregated by
-// price level.
+// A point-in-time view of one emiten's order book, aggregated by price level.
 //
 // It carries no struct tags. Transport shapes are the transformers' job in the
 // order/orderbook packages; keeping this type tag-free is what allows the
@@ -22,8 +21,7 @@ type BookState struct {
 	Asks   []Level
 }
 
-// aggregate collapses one already-sorted side of a book into per-price-level
-// totals, preserving the side's existing price-time order.
+// Expects an already-sorted side, and preserves its existing price-time order.
 func aggregate(orders []*engine.Order) []Level {
 	levels := make([]Level, 0)
 	for _, o := range orders {

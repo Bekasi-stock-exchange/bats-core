@@ -42,7 +42,6 @@ const dateLayout = "2006-01-02"
 // maxInt64 guards the ratio multiplications.
 const maxInt64 = int64(^uint64(0) >> 1)
 
-// Service announces, cancels, and executes corporate actions.
 type Service struct {
 	repo   Repository
 	emiten EmitenReader
@@ -50,14 +49,10 @@ type Service struct {
 	reg    *market.Registry
 }
 
-// NewService wires the corporate action domain to the emiten domain and the
-// market kernel.
 func NewService(repo Repository, em EmitenReader, dir *market.Directory, reg *market.Registry) *Service {
 	return &Service{repo: repo, emiten: em, dir: dir, reg: reg}
 }
 
-// Announce records a decided-but-not-yet-applied action.
-//
 // Nothing moves here. The terms are validated fully — including the arithmetic
 // that execution will perform — so that an action which cannot be executed is
 // refused now rather than at the moment the market is waiting for it.
@@ -106,9 +101,6 @@ func (s *Service) Announce(ctx context.Context, req AnnounceRequest) (Record, er
 	return s.repo.CreateAction(ctx, rec)
 }
 
-// applyTerms validates the kind-dependent half of a request and writes it onto
-// rec.
-//
 // The two branches are mutually exclusive by design: sending a ratio with a
 // dividend, or an amount with a split, is refused rather than ignored. An
 // operator who does that has misunderstood the request, and accepting it silently
@@ -166,8 +158,6 @@ func applyTerms(rec *Record, req AnnounceRequest, e market.Emiten) error {
 	return nil
 }
 
-// List returns one page of actions, newest first, optionally scoped to one
-// instrument.
 func (s *Service) List(ctx context.Context, kode string, page, limit int) ([]Record, int, error) {
 	var emitenID *int64
 	if kode = strings.TrimSpace(kode); kode != "" {
@@ -190,8 +180,6 @@ func (s *Service) List(ctx context.Context, kode string, page, limit int) ([]Rec
 	return recs, total, nil
 }
 
-// Detail returns one action with the ledger movements it caused.
-//
 // The entries are empty for an action that has not executed, which is the honest
 // answer rather than an error: the action exists and is readable, nobody has
 // simply received anything from it yet.
@@ -208,8 +196,6 @@ func (s *Service) Detail(ctx context.Context, id int64) (Record, []Entry, error)
 	return rec, entries, nil
 }
 
-// Cancel abandons an announced action.
-//
 // The row is kept rather than deleted: participants were told about the action,
 // so its cancellation is part of the instrument's history and deleting it would
 // leave the record disagreeing with what the market was told.
@@ -224,8 +210,6 @@ func (s *Service) Cancel(ctx context.Context, id int64) (Record, error) {
 	return s.repo.FindAction(ctx, id)
 }
 
-// Execute applies an announced action to the ledgers.
-//
 // This is the irreversible half. It reads the holders as they stand, computes
 // what each receives, writes every movement in one transaction, and only then
 // moves the in-memory ledger into agreement — the same order the IPO allocation
@@ -263,8 +247,6 @@ func (s *Service) Execute(ctx context.Context, id int64) (Record, []Entry, error
 	return s.executeShares(ctx, rec, e, holders)
 }
 
-// executeDividend pays cash per share held.
-//
 // No share count changes and no reference price moves: this engine's reference
 // price is the anchor the circuit breaker measures against, and a dividend is not
 // a restatement of what a share *is* — the market re-prices it by trading, which
@@ -308,8 +290,6 @@ func (s *Service) executeDividend(ctx context.Context, rec Record, e market.Emit
 	return s.reload(ctx, rec.ID)
 }
 
-// executeShares applies a split, reverse split, or bonus.
-//
 // Every holding is restated by the ratio, and so is the instrument's
 // listed_shares. The two must agree: an instrument whose share count does not
 // equal the sum of its holders' positions makes every market-cap and free-float
@@ -377,8 +357,6 @@ func (s *Service) executeShares(ctx context.Context, rec Record, e market.Emiten
 	return s.reload(ctx, rec.ID)
 }
 
-// restate applies a from:to ratio to a share count.
-//
 // Integer division truncates, and that is deliberate: a share is indivisible, so
 // a 2:3 bonus on an odd holding cannot hand out the half share the arithmetic
 // asks for. Real exchanges settle the remainder in cash; this engine has no
@@ -397,9 +375,9 @@ func restate(shares, from, to int64) (int64, error) {
 	return shares * to / from, nil
 }
 
-// reload re-reads an action and its entries after execution, so the response
-// reports what was actually committed — including the executed_at the database
-// stamped — rather than what this process believed it wrote.
+// Re-read after execution so the response reports what was actually committed —
+// including the executed_at the database stamped — rather than what this process
+// believed it wrote.
 func (s *Service) reload(ctx context.Context, id int64) (Record, []Entry, error) {
 	rec, err := s.repo.FindAction(ctx, id)
 	if err != nil {

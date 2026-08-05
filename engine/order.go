@@ -6,7 +6,6 @@
 // without dragging transport or persistence concerns with it.
 package engine
 
-// Side is the direction of an order.
 type Side string
 
 const (
@@ -14,7 +13,7 @@ const (
 	Sell Side = "sell"
 )
 
-// Type is the order type. Only limit and market are supported.
+// Only limit and market are supported.
 type Type string
 
 const (
@@ -22,7 +21,6 @@ const (
 	Market Type = "market"
 )
 
-// Status is the lifecycle state of an order.
 type Status string
 
 const (
@@ -31,8 +29,6 @@ const (
 	Cancelled Status = "cancelled"
 )
 
-// Order is a single order tracked by the engine.
-//
 // Price and quantities are int64 (whole rupiah / whole lots). Float is never
 // used for money. Price is 0 by convention for a market order.
 type Order struct {
@@ -48,8 +44,6 @@ type Order struct {
 	Seq           int64 // monotonic entry sequence; the time-priority key
 }
 
-// Trade is a single execution between a buy order and a sell order.
-//
 // The participant ids are carried alongside the order ids because the engine is
 // the only place that holds both sides of a match at once. They drive share
 // holdings, and they are persisted on the trade row so per-broker history is an

@@ -1,7 +1,5 @@
 package index
 
-// IndexView is the composite index level as served to a client.
-//
 // value is the index level itself; market_cap and divisor are the inputs that
 // produced it, included so a reader can verify the level rather than trust it.
 type IndexView struct {

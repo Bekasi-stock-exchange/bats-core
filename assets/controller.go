@@ -15,13 +15,10 @@ type Controller struct {
 	codes Codes
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service, codes Codes) *Controller {
 	return &Controller{svc: svc, codes: codes}
 }
 
-// Mine handles GET /api/participant/assets.
-//
 //	@Summary		Own share holdings
 //	@Description	Every instrument the authenticated broker holds, with the current market
 //	@Description	value of each.
@@ -50,8 +47,6 @@ func (c *Controller) Mine(w http.ResponseWriter, r *http.Request) {
 	c.write(w, r, &id.ID)
 }
 
-// All handles GET /api/admin/assets.
-//
 //	@Summary		Share holdings across brokers
 //	@Description	Every broker's holdings, or one broker's when `participant` is given.
 //	@Tags			admin

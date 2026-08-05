@@ -161,7 +161,6 @@ func fixSchemesYAML(path string) error {
 	return os.WriteFile(path, fixed, 0o644)
 }
 
-// fixSchemesJSON rewrites components.securitySchemes in the generated JSON.
 func fixSchemesJSON(path string) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -235,8 +234,6 @@ var requestBodyOneOf = regexp.MustCompile(`(?m)^([\t ]*)oneOf:\n` +
 	`[\t ]*- (\$ref: '[^']+')\n` +
 	`[\t ]*  (description: .*)\n[\t ]*  (summary: body)\n`)
 
-// fixRequestBodySchemas collapses swag's oneOf[empty object, real schema]
-// request body wrapper down to the real schema, in both generated files.
 func fixRequestBodySchemas(yamlPath, jsonPath string) error {
 	if err := fixRequestBodyYAML(yamlPath); err != nil {
 		return err
@@ -264,8 +261,6 @@ func fixRequestBodyYAML(path string) error {
 	return os.WriteFile(path, fixed, 0o644)
 }
 
-// fixRequestBodyJSON walks every requestBody in the document and replaces the
-// oneOf[empty object, real schema] wrapper with the real schema directly.
 func fixRequestBodyJSON(path string) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -349,7 +344,6 @@ func simplifyRequestBody(op map[string]any) bool {
 	return true
 }
 
-// retag rewrites the version field of a generated file in place.
 func retag(path, from, to string) error {
 	content, err := os.ReadFile(path)
 	if err != nil {

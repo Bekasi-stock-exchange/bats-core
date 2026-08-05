@@ -18,13 +18,10 @@ type WSController struct {
 	svc *Service
 }
 
-// NewWSController returns a WebSocket controller backed by svc.
 func NewWSController(svc *Service) *WSController {
 	return &WSController{svc: svc}
 }
 
-// Stream handles GET /ws/orderbook/{kode}.
-//
 // The stream is outbound-only: on connect it sends a full snapshot, then a fresh
 // full snapshot every time the book for this emiten changes. Orders never arrive
 // over WebSocket — they come only through POST /api/orders — so there is a single,

@@ -9,8 +9,6 @@ import (
 	"bekasi-automatic-trading-system/market"
 )
 
-// Record is one broker's holding of one emiten, as stored.
-//
 // LastPrice is the emiten's most recent execution price, or nil when it has never
 // traded; IPOPrice is the price it was listed at, or nil for the instruments that
 // predate that column. Both are carried rather than a single pre-resolved price so
@@ -26,8 +24,6 @@ type Record struct {
 	IPOPrice      *int64
 }
 
-// Repository reads broker holdings.
-//
 // Declared here, in the package that consumes it, and satisfied by the repository
 // package — so this package depends on a behaviour, not on a database handle.
 type Repository interface {

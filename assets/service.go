@@ -8,26 +8,23 @@ import (
 	"bekasi-automatic-trading-system/platform/httpx"
 )
 
-// ErrParticipantNotFound means the requested broker code is not registered.
 var ErrParticipantNotFound = errors.New("assets: participant not found")
 
-// Service reads broker holdings.
 type Service struct {
 	dir  *market.Directory
 	repo Repository
 }
 
-// NewService wires the assets domain to the directory and its repository.
 func NewService(dir *market.Directory, repo Repository) *Service {
 	return &Service{dir: dir, repo: repo}
 }
 
-// LoadHoldings returns every holding, to seed the in-memory ledger at startup.
+// Seeds the in-memory ledger at startup.
 func (s *Service) LoadHoldings(ctx context.Context) ([]market.Holding, error) {
 	return s.repo.LoadHoldings(ctx)
 }
 
-// List returns one page of holdings. A nil participantID means every broker.
+// A nil participantID means every broker.
 func (s *Service) List(ctx context.Context, participantID *int64, page, limit int) ([]Record, int, error) {
 	total, err := s.repo.CountHoldings(ctx, participantID)
 	if err != nil {
@@ -39,7 +36,7 @@ func (s *Service) List(ctx context.Context, participantID *int64, page, limit in
 	return records, total, err
 }
 
-// ResolveParticipant maps a broker code to its id, for the admin filter.
+// For the admin filter.
 func (s *Service) ResolveParticipant(kode string) (int64, error) {
 	p, ok := s.dir.Participant(kode)
 	if !ok {

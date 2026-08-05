@@ -20,7 +20,6 @@ type Trade struct {
 	db
 }
 
-// NewTrade returns a trade repository backed by pool.
 func NewTrade(pool *pgxpool.Pool) *Trade {
 	return &Trade{db{pool: pool}}
 }
@@ -30,7 +29,7 @@ var (
 	_ emiten.PriceStatsRepository = (*Trade)(nil)
 )
 
-// PriceStats returns an instrument's all-time high, low, and latest price.
+// All-time high, low, and latest price.
 //
 // Every value is a pointer: an instrument that has never traded has no price, and
 // reporting 0 would claim it is worth nothing. MAX/MIN over an empty set are NULL
@@ -62,8 +61,6 @@ func (r *Trade) PriceStats(ctx context.Context, emitenID int64) (emiten.PriceSta
 	return stats, nil
 }
 
-// insertTrades writes executed trade rows.
-//
 // One pgx.Batch, one round trip. Updating the resting orders' remaining and status
 // is applyFills' job, in the same transaction.
 func insertTrades(ctx context.Context, tx pgx.Tx, trades []order.TradeRecord) error {
@@ -87,7 +84,7 @@ func insertTrades(ctx context.Context, tx pgx.Tx, trades []order.TradeRecord) er
 	return nil
 }
 
-// ListTrades returns one page of the raw execution log, newest first.
+// The raw execution log, newest first.
 func (r *Trade) ListTrades(ctx context.Context, f trade.Filter, limit, offset int) ([]trade.Record, error) {
 	return postgres.QueryAll(ctx, r.pool, "trades page", `
 		SELECT id, seq, emiten_id, buy_order_id, sell_order_id,
@@ -105,7 +102,7 @@ func (r *Trade) ListTrades(ctx context.Context, f trade.Filter, limit, offset in
 		}, f.EmitenID, f.ParticipantID, limit, offset)
 }
 
-// CountTrades totals the same filter, for the pagination envelope.
+// Same filter as ListTrades, for the pagination envelope.
 func (r *Trade) CountTrades(ctx context.Context, f trade.Filter) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `
@@ -119,7 +116,7 @@ func (r *Trade) CountTrades(ctx context.Context, f trade.Filter) (int, error) {
 	return n, nil
 }
 
-// transactionsQuery selects a broker's fills from its own point of view.
+// Selects a broker's fills from its own point of view.
 //
 // A UNION ALL of the two sides rather than a single OR: each half is then a plain
 // index lookup on idx_trades_buy_participant / idx_trades_sell_participant, where
@@ -141,7 +138,6 @@ const transactionsQuery = `
 	ORDER BY seq DESC
 	LIMIT $3 OFFSET $4`
 
-// ListTransactions returns one page of a broker's fills, newest first.
 func (r *Trade) ListTransactions(ctx context.Context, participantID int64, emitenID *int64, limit, offset int) ([]trade.Transaction, error) {
 	return postgres.QueryAll(ctx, r.pool, "transactions page", transactionsQuery,
 		func(rows pgx.Rows) (trade.Transaction, error) {
@@ -152,8 +148,8 @@ func (r *Trade) ListTransactions(ctx context.Context, participantID int64, emite
 		}, participantID, emitenID, limit, offset)
 }
 
-// CountTransactions totals a broker's fills. Both sides are counted, so a
-// self-trade contributes 2 — matching what ListTransactions returns.
+// Both sides are counted, so a self-trade contributes 2 — matching what
+// ListTransactions returns.
 func (r *Trade) CountTransactions(ctx context.Context, participantID int64, emitenID *int64) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `
@@ -169,7 +165,6 @@ func (r *Trade) CountTransactions(ctx context.Context, participantID int64, emit
 	return n, nil
 }
 
-// ListTicks returns one page of raw executions for an instrument, newest first.
 func (r *Trade) ListTicks(ctx context.Context, emitenID int64, limit, offset int) ([]trade.Tick, error) {
 	return postgres.QueryAll(ctx, r.pool, "ticks page", `
 		SELECT seq, price, qty, executed_at
@@ -183,7 +178,6 @@ func (r *Trade) ListTicks(ctx context.Context, emitenID int64, limit, offset int
 		}, emitenID, limit, offset)
 }
 
-// CountTicks totals an instrument's executions.
 func (r *Trade) CountTicks(ctx context.Context, emitenID int64) (int, error) {
 	var n int
 	if err := r.pool.QueryRow(ctx,
@@ -193,7 +187,7 @@ func (r *Trade) CountTicks(ctx context.Context, emitenID int64) (int, error) {
 	return n, nil
 }
 
-// ListCandles aggregates executions into OHLC bars, newest bar first.
+// Aggregates executions into OHLC bars, newest bar first.
 //
 // Buckets are floored on the epoch rather than cut with date_trunc, because
 // date_trunc has no 5-minute unit; flooring handles every width uniformly and

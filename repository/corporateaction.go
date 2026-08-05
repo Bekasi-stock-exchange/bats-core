@@ -18,7 +18,6 @@ type CorporateAction struct {
 	db
 }
 
-// NewCorporateAction returns a corporate action repository backed by pool.
 func NewCorporateAction(pool *pgxpool.Pool) *CorporateAction {
 	return &CorporateAction{db{pool: pool}}
 }
@@ -39,7 +38,6 @@ func scanAction(rows pgx.Rows) (corporateaction.Record, error) {
 	return rec, err
 }
 
-// CreateAction records an announced action and returns it with its assigned id.
 func (r *CorporateAction) CreateAction(ctx context.Context, rec corporateaction.Record) (corporateaction.Record, error) {
 	rows, err := r.pool.Query(ctx, `
 		INSERT INTO corporate_action
@@ -62,8 +60,7 @@ func (r *CorporateAction) CreateAction(ctx context.Context, rec corporateaction.
 	return scanAction(rows)
 }
 
-// ListActions returns one page of actions, newest first. A nil emitenID means
-// every instrument.
+// A nil emitenID means every instrument.
 //
 // Newest first because an operator asking what is going on wants the pending and
 // recent actions, not the ones settled a year ago. The id tiebreak keeps the
@@ -80,8 +77,7 @@ func (r *CorporateAction) ListActions(ctx context.Context, emitenID *int64, limi
 		scanAction, emitenID, limit, offset)
 }
 
-// CountActions returns the total matching the same filter, for the pagination
-// envelope.
+// Same filter as ListActions, for the pagination envelope.
 func (r *CorporateAction) CountActions(ctx context.Context, emitenID *int64) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `
@@ -93,8 +89,8 @@ func (r *CorporateAction) CountActions(ctx context.Context, emitenID *int64) (in
 	return n, nil
 }
 
-// FindAction returns one action, or corporateaction.ErrNotFound — so the service
-// can answer 404 rather than 500.
+// Returns corporateaction.ErrNotFound so the service can answer 404 rather than
+// 500.
 func (r *CorporateAction) FindAction(ctx context.Context, id int64) (corporateaction.Record, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT`+actionColumns+`
@@ -118,9 +114,8 @@ func (r *CorporateAction) FindAction(ctx context.Context, id int64) (corporateac
 	return rec, nil
 }
 
-// EntriesByAction returns what each broker received, joined to the participant
-// code and name a reader wants. Ordered by code so the same action always reads
-// back identically.
+// Joined to the participant code and name a reader wants. Ordered by code so the
+// same action always reads back identically.
 func (r *CorporateAction) EntriesByAction(ctx context.Context, actionID int64) ([]corporateaction.Entry, error) {
 	return postgres.QueryAll(ctx, r.pool, "corporate action entries", `
 		SELECT e.participant_id, p.kode, p.nama,
@@ -137,8 +132,6 @@ func (r *CorporateAction) EntriesByAction(ctx context.Context, actionID int64) (
 		}, actionID)
 }
 
-// HoldersOf returns every broker with a non-zero position in this instrument.
-//
 // Zero rows are excluded rather than distributed to: a broker holding nothing
 // receives nothing from any of the four kinds, and an entry recording that would
 // be noise in the audit trail. Ordered by participant so the write order below is
@@ -157,8 +150,6 @@ func (r *CorporateAction) HoldersOf(ctx context.Context, emitenID int64) ([]corp
 		}, emitenID)
 }
 
-// CancelAction moves an announced action to CANCELLED.
-//
 // The status check is in the WHERE clause, not in the service. Only the database
 // sees two concurrent requests, and a check in the process would let a cancel and
 // an execute both pass before either wrote — leaving an action that is cancelled
@@ -180,7 +171,7 @@ func (r *CorporateAction) CancelAction(ctx context.Context, id int64) error {
 	return nil
 }
 
-// ExecuteShareAction applies a split, reverse split, or bonus in one transaction.
+// Applies a split, reverse split, or bonus in one transaction.
 //
 // Four things move together: the action's status, every holder's share count, the
 // audit entries, and the instrument's own listed_shares and band reference. A
@@ -249,8 +240,8 @@ func (r *CorporateAction) ExecuteShareAction(ctx context.Context, id, emitenID, 
 	return nil
 }
 
-// ExecuteDividend applies a dividend in one transaction: the wallet credits, the
-// audit entries, and the action's status.
+// One transaction: the wallet credits, the audit entries, and the action's
+// status.
 //
 // Same reasoning as ExecuteShareAction — brokers paid with no record of payment
 // cannot be told apart from brokers an operator funded, and the status claim
@@ -307,8 +298,7 @@ func (r *CorporateAction) ExecuteDividend(ctx context.Context, id int64, entries
 	return nil
 }
 
-// claimAction marks an announced action EXECUTED, returning ErrNotAnnounced if it
-// is not announced.
+// Marks an announced action EXECUTED, returning ErrNotAnnounced if it is not.
 //
 // It runs first inside both execution transactions, and everything else is
 // conditional on it. That ordering is the whole concurrency guarantee: two

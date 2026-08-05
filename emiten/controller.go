@@ -17,13 +17,10 @@ type Controller struct {
 	duplicate func(error) bool
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service, isDuplicate func(error) bool) *Controller {
 	return &Controller{svc: svc, duplicate: isDuplicate}
 }
 
-// List handles GET /api/admin/emiten.
-//
 //	@Summary		List listed instruments
 //	@Description	Master data for every emiten, ordered by code. Price statistics are
 //	@Description	deliberately excluded — computing them per row would be a query per
@@ -44,8 +41,6 @@ func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, httpx.NewPage(ToEmitenViews(emitens), page, limit, total))
 }
 
-// Create handles POST /api/admin/emiten.
-//
 //	@Summary		Register a new instrument (dormant)
 //	@Description	Registers an emiten and gives it an empty order book. It starts
 //	@Description	**inactive** and is *not* tradeable — `is_active` is false and every order
@@ -91,8 +86,6 @@ func (c *Controller) Create(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, ToEmitenView(e))
 }
 
-// Detail handles GET /api/participant/emiten/{kode}.
-//
 //	@Summary		Get instrument detail
 //	@Description	Master data plus all-time price statistics and derived valuations.
 //	@Description
@@ -117,8 +110,6 @@ func (c *Controller) Detail(w http.ResponseWriter, r *http.Request) {
 	c.detail(w, r)
 }
 
-// AdminDetail handles GET /api/admin/emiten/{kode}.
-//
 // The same view as the participant detail, behind the admin key: the admin list
 // omits price statistics because computing them per row costs a query per
 // instrument, so this is where an operator reads them for one instrument.
@@ -151,7 +142,7 @@ func (c *Controller) AdminDetail(w http.ResponseWriter, r *http.Request) {
 	c.detail(w, r)
 }
 
-// detail serves the instrument detail view. Both tiers return the same payload —
+// Both tiers return the same payload —
 // master data is not confidential and the price statistics are the same numbers —
 // so the handler is shared and only the guarding middleware differs. Keeping one
 // body means the two views cannot drift apart as fields are added.
@@ -166,7 +157,6 @@ func (c *Controller) detail(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToEmitenDetail(e, stats))
 }
 
-// writeError maps a service error onto the response.
 func (c *Controller) writeError(w http.ResponseWriter, err error, kode string) {
 	var invalid ValidationError
 	switch {

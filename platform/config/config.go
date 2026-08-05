@@ -34,7 +34,6 @@ const (
 	keyDisableDocs = "DISABLE_DOCS"
 )
 
-// Load reads configuration from the environment and an optional local .env file.
 func Load() (Config, error) {
 	v := viper.New()
 	v.AutomaticEnv()
@@ -72,8 +71,8 @@ func Load() (Config, error) {
 	}, nil
 }
 
-// FindUpwards walks from the working directory toward the filesystem root and
-// returns the path of the first directory that contains name, or "" if none.
+// Walks from the working directory toward the filesystem root and returns the
+// path of the first directory that contains name, or "" if none.
 //
 // Used to locate repo-root paths (.env, migrations/) regardless of where the
 // binary was launched from — which is what lets `go run ./cmd/migrate` work from

@@ -11,7 +11,6 @@ import (
 	"bekasi-automatic-trading-system/platform/postgres"
 )
 
-// LoadEmiten returns every listed instrument, ordered by code.
 func (r *Master) LoadEmiten(ctx context.Context) ([]market.Emiten, error) {
 	return postgres.QueryAll(ctx, r.pool, "emiten",
 		`SELECT id, kode, nama, listed_shares, unlisted_shares, is_active,
@@ -25,8 +24,8 @@ func (r *Master) LoadEmiten(ctx context.Context) ([]market.Emiten, error) {
 		})
 }
 
-// CreateEmiten inserts a new listed instrument and returns it with its assigned
-// id, so the caller can register it in the live directory and registry.
+// Returns the assigned id so the caller can register it in the live directory
+// and registry.
 //
 // A duplicate kode surfaces as ErrDuplicate rather than a raw driver error, so
 // the controller can answer 409 instead of 500.
@@ -46,7 +45,7 @@ func (r *Master) CreateEmiten(ctx context.Context, e market.Emiten) (market.Emit
 	return e, nil
 }
 
-// ActivateEmiten opens a dormant instrument for trading at its offering price.
+// Opens a dormant instrument for trading at its offering price.
 //
 // is_active and ipo_price move together because they are one event: an instrument
 // becomes tradeable *at* a price, and a row that is active with no price would
@@ -87,8 +86,6 @@ var ErrAlreadyActive = errors.New("repository: emiten is already active")
 // 409 without importing pgx error codes.
 var ErrDuplicate = errors.New("repository: already exists")
 
-// IsDuplicate reports whether err is a unique-constraint violation.
-//
 // Exported so controllers can answer 409 without importing pgx or knowing what a
 // SQLSTATE is: they receive this as a plain func(error) bool.
 func IsDuplicate(err error) bool {

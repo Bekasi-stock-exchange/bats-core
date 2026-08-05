@@ -239,8 +239,7 @@ func runServer() error {
 	return serve(ctx, ":"+strconv.Itoa(cfg.HTTPPort), handler)
 }
 
-// serve runs the HTTP server until ctx is cancelled, then drains in-flight
-// requests before returning.
+// Runs until ctx is cancelled, then drains in-flight requests before returning.
 //
 // The listener runs on its own goroutine so this one can wait on both outcomes: a
 // startup failure (port already taken) surfaces immediately via errc, while a

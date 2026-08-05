@@ -16,8 +16,6 @@ type Record struct {
 	UpdatedAt     time.Time
 }
 
-// Repository reads broker wallets.
-//
 // Declared here, in the package that consumes it, and satisfied by the
 // repository package — so this package depends on a behaviour, not on a
 // database handle.

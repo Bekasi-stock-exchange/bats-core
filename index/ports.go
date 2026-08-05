@@ -72,21 +72,18 @@ type Snapshot struct {
 // repository package — so this package depends on a behaviour rather than on a
 // database handle.
 type Repository interface {
-	// LoadIndex returns the stored definition for an index code.
 	LoadIndex(ctx context.Context, kode string) (Definition, error)
 
-	// SaveDivisor writes a restated divisor and returns the definition as
-	// written, so the caller refreshes its cache from the database's own view
-	// rather than from what it hoped it wrote.
+	// Returns the definition as written, so the caller refreshes its cache from
+	// the database's own view rather than from what it hoped it wrote.
 	SaveDivisor(ctx context.Context, indexID int16, divisor float64) (Definition, error)
 
-	// InsertSnapshot appends one computed level to the history.
 	InsertSnapshot(ctx context.Context, indexID int64, s Snapshot) error
 
-	// ListSnapshots returns one page of history, newest first.
+	// Newest first.
 	ListSnapshots(ctx context.Context, indexID int16, from, to *time.Time, limit, offset int) ([]Snapshot, error)
 
-	// CountSnapshots totals the same filter, for the pagination envelope.
+	// Totals the same filter, for the pagination envelope.
 	CountSnapshots(ctx context.Context, indexID int16, from, to *time.Time) (int, error)
 }
 

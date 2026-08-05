@@ -24,8 +24,7 @@ type Page[T any] struct {
 	Total int `json:"total"`
 }
 
-// NewPage builds a page envelope, normalizing a nil slice to an empty one so the
-// JSON is [] rather than null.
+// Normalizes a nil slice to an empty one so the JSON is [] rather than null.
 func NewPage[T any](data []T, page, limit, total int) Page[T] {
 	if data == nil {
 		data = []T{}
@@ -33,8 +32,8 @@ func NewPage[T any](data []T, page, limit, total int) Page[T] {
 	return Page[T]{Data: data, Limit: limit, Page: page, Total: total}
 }
 
-// ParsePagination reads the page and limit query parameters, clamping them to
-// sane bounds: page >= 1, limit in [1, MaxLimit] defaulting to DefaultLimit.
+// Clamps to sane bounds: page >= 1, limit in [1, MaxLimit] defaulting to
+// DefaultLimit.
 //
 // Unparseable values fall back to the defaults rather than erroring, preserving
 // the existing behaviour where ?page=abc is treated as page 1.
@@ -53,8 +52,8 @@ func ParsePagination(r *http.Request) (page, limit int) {
 	return page, limit
 }
 
-// Slice returns the half-open bounds of the requested page within a collection
-// of size total, clamped so they are always a valid slice range.
+// Returns the half-open bounds of the requested page within a collection of
+// size total, clamped so they are always a valid slice range.
 func Slice(page, limit, total int) (start, end int) {
 	start = (page - 1) * limit
 	if start > total {

@@ -14,10 +14,8 @@ type Codes struct {
 	dir *market.Directory
 }
 
-// NewCodes returns a resolver backed by the directory.
 func NewCodes(dir *market.Directory) Codes { return Codes{dir: dir} }
 
-// ToActionView converts a stored action into its API shape.
 func (c Codes) ToActionView(rec Record) ActionView {
 	view := ActionView{
 		ID:         rec.ID,
@@ -50,8 +48,7 @@ func (c Codes) ToActionView(rec Record) ActionView {
 	return view
 }
 
-// ToActionViews converts a batch, preserving order. Always non-nil so the field
-// marshals as [] rather than null.
+// Preserves order. Always non-nil so the field marshals as [] rather than null.
 func (c Codes) ToActionViews(recs []Record) []ActionView {
 	out := make([]ActionView, 0, len(recs))
 	for _, rec := range recs {
@@ -60,8 +57,6 @@ func (c Codes) ToActionViews(recs []Record) []ActionView {
 	return out
 }
 
-// ToDetailView combines an action with the ledger movements it caused.
-//
 // The before/after share totals are summed from the entries rather than read off
 // the instrument, so the detail of an executed action keeps reporting what that
 // action did even after later actions have moved the instrument on again. Reading

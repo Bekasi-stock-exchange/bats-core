@@ -26,7 +26,6 @@ type UnderwriterView struct {
 	IsActive    bool   `json:"is_active" example:"true"`
 }
 
-// UnderwriterAllocation is one underwriter's tranche in an IPO request.
 type UnderwriterAllocation struct {
 	// Broker code taking this tranche. Must be a registered underwriter.
 	Underwriter string `json:"underwriter" example:"YP" validate:"required"`
@@ -74,7 +73,6 @@ type ExistingIPORequest struct {
 	Underwriters []UnderwriterAllocation `json:"underwriters" validate:"required"`
 }
 
-// AllocationView is one underwriter's tranche as returned after an IPO.
 type AllocationView struct {
 	// Broker code that took this tranche. Identical to participant, since an
 	// underwriter is a participant; both are present so the field a client keys

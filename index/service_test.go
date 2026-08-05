@@ -45,7 +45,6 @@ func (s *stubRepo) CountSnapshots(context.Context, int16, *time.Time, *time.Time
 	return len(s.snapshots), nil
 }
 
-// stubPrices is an in-memory PriceRepository.
 type stubPrices struct {
 	prices map[int64]int64
 	err    error
@@ -55,8 +54,7 @@ func (s *stubPrices) LastPrices(context.Context) (map[int64]int64, error) {
 	return s.prices, s.err
 }
 
-// fixture builds a service over the given emiten and last prices, with the
-// divisor already established so computation is not bootstrapping.
+// The divisor is already established, so computation is not bootstrapping.
 func fixture(t *testing.T, emitens []market.Emiten, prices map[int64]int64, divisor float64) (*Service, *stubRepo, *Cache) {
 	t.Helper()
 
@@ -78,8 +76,8 @@ func fixture(t *testing.T, emitens []market.Emiten, prices map[int64]int64, divi
 
 func ipo(v int64) *int64 { return &v }
 
-// closeTo compares floats with a tolerance, since the index is a ratio and
-// exact equality would make these tests fragile for no benefit.
+// A tolerance, since the index is a ratio and exact equality would make these
+// tests fragile for no benefit.
 func closeTo(got, want float64) bool { return math.Abs(got-want) < 1e-6 }
 
 func TestRecomputeWeightsByListedShares(t *testing.T) {

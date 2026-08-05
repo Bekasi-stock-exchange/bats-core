@@ -16,15 +16,12 @@ type MarketConfig struct {
 	db
 }
 
-// NewMarketConfig returns a config repository backed by pool.
 func NewMarketConfig(pool *pgxpool.Pool) *MarketConfig {
 	return &MarketConfig{db{pool: pool}}
 }
 
 var _ marketconfig.Repository = (*MarketConfig)(nil)
 
-// LoadSettings returns the stored configuration.
-//
 // The row is seeded by migration 013 and pinned to id = 1 by a CHECK, so a
 // missing row means the migration has not run — a deployment fault, reported as
 // an error rather than papered over with defaults. Silently substituting them
@@ -47,9 +44,6 @@ func (r *MarketConfig) LoadSettings(ctx context.Context) (marketconfig.Settings,
 	return s, nil
 }
 
-// SaveSettings overwrites the stored configuration and returns the row as
-// written.
-//
 // An upsert rather than an update: it makes the write independent of whether the
 // seed row exists, so the endpoint behaves the same on a database that has been
 // migrated from scratch and one where the row was removed by hand. RETURNING

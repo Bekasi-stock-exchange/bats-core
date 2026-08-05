@@ -38,11 +38,9 @@ type Emiten struct {
 	SessionReference *int64
 }
 
-// TotalShares is the full share count outstanding.
 func (e Emiten) TotalShares() int64 { return e.ListedShares + e.UnlistedShares }
 
-// ReferencePrice resolves the price to value this instrument at, given its most
-// recent execution price (nil when it has never traded).
+// lastTrade is the most recent execution price, nil when it has never traded.
 //
 // The market's own price wins whenever one exists; the IPO price only stands in
 // until the first trade. Both may be absent — an instrument listed before the IPO
@@ -68,7 +66,7 @@ type Participant struct {
 
 // Directory is the master-data lookup for emiten and participants.
 //
-// It is seeded at startup and can grow at runtime, because admin can create an
+// Seeded at startup and can grow at runtime, because admin can create an
 // emiten or a participant while the exchange is running. That is why it is
 // locked: reads take RLock, the Add* methods take Lock. It was previously
 // immutable and lock-free, and adding creation without the mutex would have been
@@ -85,8 +83,8 @@ type Directory struct {
 	emitens      []Emiten // kept sorted by Kode
 }
 
-// NewDirectory indexes master data by code and by id. The emiten slice is kept
-// sorted so list endpoints never sort per request.
+// Indexes master data by code and by id. The emiten slice is kept sorted so
+// list endpoints never sort per request.
 func NewDirectory(emitens []Emiten, participants []Participant) *Directory {
 	d := &Directory{
 		emitenByKode: make(map[string]Emiten, len(emitens)),
@@ -109,7 +107,6 @@ func NewDirectory(emitens []Emiten, participants []Participant) *Directory {
 	return d
 }
 
-// Emiten looks up a listed instrument by its code.
 func (d *Directory) Emiten(kode string) (Emiten, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -117,8 +114,7 @@ func (d *Directory) Emiten(kode string) (Emiten, bool) {
 	return e, ok
 }
 
-// EmitenByID looks up a listed instrument by its id. Used to turn the ids stored
-// on trades into codes without a database join.
+// Used to turn the ids stored on trades into codes without a database join.
 func (d *Directory) EmitenByID(id int64) (Emiten, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -126,7 +122,6 @@ func (d *Directory) EmitenByID(id int64) (Emiten, bool) {
 	return e, ok
 }
 
-// Participant looks up a broker by its code.
 func (d *Directory) Participant(kode string) (Participant, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -134,7 +129,6 @@ func (d *Directory) Participant(kode string) (Participant, bool) {
 	return p, ok
 }
 
-// ParticipantByID looks up a broker by its id.
 func (d *Directory) ParticipantByID(id int64) (Participant, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -142,9 +136,7 @@ func (d *Directory) ParticipantByID(id int64) (Participant, bool) {
 	return p, ok
 }
 
-// Emitens returns every emiten, ordered by code.
-//
-// It returns a copy. Handing out the backing array would race with a concurrent
+// Returns every emiten ordered by code — and returns a copy. Handing out the backing array would race with a concurrent
 // AddEmiten appending to it — a hazard that did not exist while this type was
 // immutable, and one no amount of locking inside this method would fix.
 func (d *Directory) Emitens() []Emiten {
@@ -155,14 +147,14 @@ func (d *Directory) Emitens() []Emiten {
 	return out
 }
 
-// CountEmiten returns how many emiten exist, for pagination totals.
+// For pagination totals.
 func (d *Directory) CountEmiten() int {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return len(d.emitens)
 }
 
-// AddEmiten registers a newly created emiten, keeping the sorted order.
+// Keeps the sorted order.
 func (d *Directory) AddEmiten(e Emiten) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -176,8 +168,7 @@ func (d *Directory) AddEmiten(e Emiten) {
 	d.emitens[i] = e
 }
 
-// ActivateEmiten marks a listed instrument tradeable and records the offering
-// price it was activated at, reporting whether the code was found.
+// Reports whether the code was found.
 //
 // It exists because an instrument is created dormant and only opens for trading
 // once its shares have been placed — see the emiten service. The IPO price is set
@@ -210,8 +201,7 @@ func (d *Directory) ActivateEmiten(kode string, ipoPrice int64) bool {
 	return true
 }
 
-// RestateShares updates an instrument's listed share count and its band anchor
-// after a corporate action, reporting whether the code was found.
+// Applied after a corporate action; reports whether the code was found.
 //
 // A split or bonus changes what a share *is*, so both move together: the count of
 // shares outstanding, and the reference the price band is measured from. Leaving
@@ -251,7 +241,6 @@ func (d *Directory) RestateShares(kode string, listedShares int64, reference *in
 	return true
 }
 
-// AddParticipant registers a newly created broker.
 func (d *Directory) AddParticipant(p Participant) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

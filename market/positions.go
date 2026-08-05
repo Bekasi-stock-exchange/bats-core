@@ -31,7 +31,6 @@ func (p *positions) available(participantID, emitenID int64) int64 {
 	return p.held[participantID][emitenID] - p.reserved[participantID][emitenID]
 }
 
-// Held returns a broker's current holding of one emiten.
 func (p *positions) Held(participantID, emitenID int64) int64 {
 	return p.held[participantID][emitenID]
 }
@@ -50,7 +49,6 @@ func (p *positions) availableCash(participantID int64) int64 {
 	return p.cash[participantID] - p.cashReserved[participantID]
 }
 
-// Cash returns a broker's current cash balance.
 func (p *positions) Cash(participantID int64) int64 {
 	return p.cash[participantID]
 }
@@ -63,8 +61,8 @@ func (p *positions) addCashReserved(participantID, delta int64) {
 	add1(p.cashReserved, participantID, delta)
 }
 
-// add applies a delta, creating the inner map on demand and dropping entries that
-// fall back to zero so the maps do not grow without bound.
+// Creates the inner map on demand, and drops entries that fall back to zero so
+// the maps do not grow without bound.
 func add(m map[int64]map[int64]int64, outer, inner, delta int64) {
 	if delta == 0 {
 		return
@@ -83,8 +81,8 @@ func add(m map[int64]map[int64]int64, outer, inner, delta int64) {
 	}
 }
 
-// add1 applies a delta to a single-level map, dropping entries that fall back
-// to zero so the map does not grow without bound. Balances are allowed to
+// The single-level equivalent of add. Drops entries that fall back to zero so
+// the map does not grow without bound. Balances are allowed to
 // settle at exactly zero without needing a positive floor like shares do.
 func add1(m map[int64]int64, key, delta int64) {
 	if delta == 0 {

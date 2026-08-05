@@ -34,20 +34,15 @@ func invalid(format string, args ...any) error {
 	return ValidationError{Msg: fmt.Sprintf(format, args...)}
 }
 
-// Service owns broker identity and credentials.
 type Service struct {
 	repo Repository
 	dir  *market.Directory
 }
 
-// NewService wires the participant domain to its repository and the directory it
-// keeps in step.
 func NewService(repo Repository, dir *market.Directory) *Service {
 	return &Service{repo: repo, dir: dir}
 }
 
-// Authenticate resolves a presented API key to the broker that owns it.
-//
 // The key is hashed and looked up by hash, so the plaintext is never compared
 // against anything stored and never needs to be. An unknown key is
 // indistinguishable from a revoked one, which is what stops this being a probe for
@@ -64,8 +59,7 @@ func (s *Service) Authenticate(ctx context.Context, presented string) (Identity,
 	return Identity{ID: rec.ID, Kode: rec.Kode, Nama: rec.Nama}, nil
 }
 
-// Create registers a broker and issues its first key, returning the key in the
-// clear exactly once.
+// The key is returned in the clear exactly once.
 //
 // The row is written before the directory is updated: the database owns
 // uniqueness, so a duplicate code must fail before any in-memory state moves.
@@ -92,7 +86,7 @@ func (s *Service) Create(ctx context.Context, kode, nama string) (Record, string
 	return rec, key, nil
 }
 
-// Issue mints a new key for an existing broker, invalidating any previous one.
+// Invalidates any previous key.
 func (s *Service) Issue(ctx context.Context, kode string) (string, error) {
 	if _, err := s.repo.FindByKode(ctx, kode); err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -114,8 +108,8 @@ func (s *Service) issue(ctx context.Context, kode string) (string, error) {
 	return key, nil
 }
 
-// Revoke removes a broker's key. The next request carrying it fails immediately,
-// because authentication reads the database rather than a cache.
+// The next request carrying the key fails immediately, because authentication
+// reads the database rather than a cache.
 func (s *Service) Revoke(ctx context.Context, kode string) error {
 	if _, err := s.repo.FindByKode(ctx, kode); err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -126,8 +120,7 @@ func (s *Service) Revoke(ctx context.Context, kode string) error {
 	return s.repo.ClearAPIKey(ctx, kode)
 }
 
-// List returns every broker. Keys are not included and cannot be: only their
-// hashes are stored.
+// Keys are not included and cannot be: only their hashes are stored.
 func (s *Service) List(ctx context.Context) ([]Record, error) {
 	return s.repo.List(ctx)
 }
@@ -143,8 +136,8 @@ func generateKey(kode string) (string, error) {
 	return fmt.Sprintf("jast_%s_%s", kode, base64.RawURLEncoding.EncodeToString(buf)), nil
 }
 
-// hashKey returns the hex SHA-256 of a key. This is what the database stores and
-// what lookups match on, so a stolen dump yields no usable credential.
+// The hex SHA-256 is what the database stores and what lookups match on, so a
+// stolen dump yields no usable credential.
 func hashKey(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])

@@ -5,7 +5,6 @@ import (
 	"bekasi-automatic-trading-system/market"
 )
 
-// ToSubmitOrderResponse converts a matching result into the response shape.
 func ToSubmitOrderResponse(res Result) SubmitOrderResponse {
 	return SubmitOrderResponse{
 		Order: OrderView{
@@ -17,8 +16,6 @@ func ToSubmitOrderResponse(res Result) SubmitOrderResponse {
 	}
 }
 
-// ToCancelOrderResponse converts a cancellation into the response shape.
-//
 // Remaining is the quantity that never filled and has now been released — not a
 // quantity still working, which is what the same field means on a submission.
 func ToCancelOrderResponse(res Result) CancelOrderResponse {
@@ -31,8 +28,6 @@ func ToCancelOrderResponse(res Result) CancelOrderResponse {
 	}
 }
 
-// ToOrderHistoryViews converts stored orders into the admin history shape.
-//
 // Codes are resolved through market.Directory, which already holds every emiten
 // and participant in memory — so listing order history needs no join. Always
 // non-nil so the field marshals as [] rather than null.
@@ -60,8 +55,7 @@ func ToOrderHistoryViews(records []OrderRecord, dir *market.Directory) []OrderHi
 	return out
 }
 
-// toTradeViews maps executions to their JSON shape. The result is always non-nil
-// so the field marshals as [] rather than null.
+// Always non-nil so the field marshals as [] rather than null.
 func toTradeViews(trades []engine.Trade) []TradeView {
 	out := make([]TradeView, 0, len(trades))
 	for _, t := range trades {

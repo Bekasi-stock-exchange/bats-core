@@ -17,13 +17,11 @@ type OrderBook struct {
 	Asks     []*Order
 }
 
-// NewOrderBook returns an empty book for the given emiten.
 func NewOrderBook(emitenID int64) *OrderBook {
 	return &OrderBook{EmitenID: emitenID}
 }
 
-// insertBid inserts o into Bids keeping the slice sorted by price desc, then
-// Seq asc.
+// Keeps Bids sorted by price desc, then Seq asc.
 func (b *OrderBook) insertBid(o *Order) {
 	i := 0
 	for i < len(b.Bids) {
@@ -38,8 +36,7 @@ func (b *OrderBook) insertBid(o *Order) {
 	b.Bids = insertAt(b.Bids, i, o)
 }
 
-// insertAsk inserts o into Asks keeping the slice sorted by price asc, then
-// Seq asc.
+// Keeps Asks sorted by price asc, then Seq asc.
 func (b *OrderBook) insertAsk(o *Order) {
 	i := 0
 	for i < len(b.Asks) {
@@ -52,7 +49,6 @@ func (b *OrderBook) insertAsk(o *Order) {
 	b.Asks = insertAt(b.Asks, i, o)
 }
 
-// bestBid returns the highest-priority resting buy order, or nil if none.
 func (b *OrderBook) bestBid() *Order {
 	if len(b.Bids) == 0 {
 		return nil
@@ -60,7 +56,6 @@ func (b *OrderBook) bestBid() *Order {
 	return b.Bids[0]
 }
 
-// bestAsk returns the highest-priority resting sell order, or nil if none.
 func (b *OrderBook) bestAsk() *Order {
 	if len(b.Asks) == 0 {
 		return nil
@@ -68,17 +63,14 @@ func (b *OrderBook) bestAsk() *Order {
 	return b.Asks[0]
 }
 
-// popBestBid removes and returns the front bid.
 func (b *OrderBook) popBestBid() {
 	b.Bids = b.Bids[1:]
 }
 
-// popBestAsk removes and returns the front ask.
 func (b *OrderBook) popBestAsk() {
 	b.Asks = b.Asks[1:]
 }
 
-// insertAt inserts o at index i in s, preserving order.
 func insertAt(s []*Order, i int, o *Order) []*Order {
 	s = append(s, nil)
 	copy(s[i+1:], s[i:])

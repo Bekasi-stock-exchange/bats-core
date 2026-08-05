@@ -18,7 +18,6 @@ type Halt struct {
 	db
 }
 
-// NewHalt returns a halt repository backed by pool.
 func NewHalt(pool *pgxpool.Pool) *Halt {
 	return &Halt{db{pool: pool}}
 }
@@ -29,7 +28,7 @@ type ActiveHalt struct {
 	ResumesAt time.Time
 }
 
-// SaveHalt records a halt, replacing any existing one for the same emiten.
+// Replaces any existing halt for the same emiten.
 //
 // An upsert rather than an insert: an instrument that halts, resumes, and halts
 // again within a session must not fail on the primary key. The row is the
@@ -53,8 +52,7 @@ func (r *Halt) SaveHalt(ctx context.Context, emitenID, price, reference int64, u
 	return nil
 }
 
-// ClearHalt removes an emiten's halt. Clearing one that does not exist is not an
-// error: halts expire on a timer that may run twice over the same deadline, and
+// Clearing one that does not exist is not an error: halts expire on a timer that may run twice over the same deadline, and
 // the second pass finding nothing to do is ordinary.
 func (r *Halt) ClearHalt(ctx context.Context, emitenID int64) error {
 	_, err := r.pool.Exec(ctx,
@@ -65,8 +63,7 @@ func (r *Halt) ClearHalt(ctx context.Context, emitenID int64) error {
 	return nil
 }
 
-// LoadActiveHalts returns every halt that has not yet expired, for restoring
-// live state at startup.
+// For restoring live state at startup.
 //
 // Filtered by resumes_at rather than loaded wholesale, so a halt that expired
 // while the process was down is not reinstated — it would otherwise close an
@@ -85,9 +82,6 @@ func (r *Halt) LoadActiveHalts(ctx context.Context) ([]ActiveHalt, error) {
 		})
 }
 
-// PurgeExpiredHalts deletes halts whose deadline has passed, and reports how
-// many rows it removed.
-//
 // Run once at startup to clear halts that expired while the process was down.
 // Without it those rows accumulate, and every later LoadActiveHalts pays to
 // filter past them.
@@ -99,8 +93,7 @@ func (r *Halt) PurgeExpiredHalts(ctx context.Context) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
-// SetReferencePrice updates the session anchor an emiten's price band is
-// measured from.
+// The session anchor an emiten's price band is measured from.
 func (r *Halt) SetReferencePrice(ctx context.Context, emitenID, price int64) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE emiten SET reference_price = $2 WHERE id = $1`, emitenID, price)

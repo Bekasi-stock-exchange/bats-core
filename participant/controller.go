@@ -18,14 +18,11 @@ type Controller struct {
 	duplicate func(error) bool
 }
 
-// NewController returns a controller backed by svc. isDuplicate maps a storage
-// conflict onto 409.
+// isDuplicate maps a storage conflict onto 409.
 func NewController(svc *Service, isDuplicate func(error) bool) *Controller {
 	return &Controller{svc: svc, duplicate: isDuplicate}
 }
 
-// Create handles POST /api/admin/participants.
-//
 //	@Summary		Create a broker
 //	@Description	Registers an exchange participant and issues its first API key.
 //	@Description	The key is returned **once, in this response only** — it is stored as a
@@ -57,8 +54,6 @@ func (c *Controller) Create(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, ToIssuedKeyResponse(rec, key))
 }
 
-// List handles GET /api/admin/participants.
-//
 //	@Summary		List brokers
 //	@Description	Every exchange participant, ordered by code. API keys are **not** included
 //	@Description	and cannot be: only their hashes are stored. The prefix identifies which
@@ -79,8 +74,6 @@ func (c *Controller) List(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToParticipantViews(recs))
 }
 
-// IssueKey handles POST /api/admin/participants/apikey.
-//
 //	@Summary		Re-issue a broker's API key
 //	@Description	Mints a new key and invalidates the previous one immediately. The key is
 //	@Description	returned once and never again. The target broker travels in the body, not
@@ -109,8 +102,6 @@ func (c *Controller) IssueKey(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, IssuedKeyResponse{Kode: req.Participant, APIKey: key})
 }
 
-// RevokeKey handles DELETE /api/admin/participants/apikey.
-//
 //	@Summary		Revoke a broker's API key
 //	@Description	Removes the key. The next request carrying it is rejected immediately —
 //	@Description	authentication reads the database rather than a cache, so revocation is
@@ -150,9 +141,8 @@ func (c *Controller) decodeKeyRequest(w http.ResponseWriter, r *http.Request) (K
 	return req, true
 }
 
-// writeError maps a service error onto the response: a broken rule is the
-// client's, a conflict is a 409, anything else is ours and is reported without
-// leaking internals.
+// A broken rule is the client's, a conflict is a 409, anything else is ours and
+// is reported without leaking internals.
 func (c *Controller) writeError(w http.ResponseWriter, err error) {
 	var invalid ValidationError
 	switch {

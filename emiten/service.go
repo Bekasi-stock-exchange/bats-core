@@ -26,7 +26,6 @@ func invalid(format string, args ...any) error {
 	return ValidationError{Msg: fmt.Sprintf(format, args...)}
 }
 
-// Repository writes listed instruments.
 type Repository interface {
 	CreateEmiten(ctx context.Context, e market.Emiten) (market.Emiten, error)
 
@@ -85,7 +84,6 @@ type ListingObserver interface {
 	ListingAdded(ctx context.Context, capBefore int64) error
 }
 
-// Service reads and creates listed instruments.
 type Service struct {
 	dir    *market.Directory
 	reg    *market.Registry
@@ -98,13 +96,10 @@ type Service struct {
 	listings ListingObserver
 }
 
-// NewService wires the emiten domain to the market kernel and its repositories.
 func NewService(dir *market.Directory, reg *market.Registry, repo Repository, prices PriceStatsRepository) *Service {
 	return &Service{dir: dir, reg: reg, repo: repo, prices: prices}
 }
 
-// ObserveListings registers the observer notified around each new listing.
-//
 // A setter rather than a constructor parameter because the index service is
 // built after this one — the underwriter domain already depends on this service,
 // and requiring the index up front would make the construction order circular.
@@ -123,7 +118,6 @@ func (s *Service) List(page, limit int) ([]market.Emiten, int) {
 	return all[start:end], total
 }
 
-// Detail returns one instrument with its all-time price statistics.
 func (s *Service) Detail(ctx context.Context, kode string) (market.Emiten, PriceStats, error) {
 	e, ok := s.dir.Emiten(kode)
 	if !ok {

@@ -4,8 +4,7 @@ import "testing"
 
 const emiten = int64(1)
 
-// ord is a small helper to build a limit order tersely. Qty is set; Remaining
-// and Seq are assigned by Submit.
+// Qty is set; Remaining and Seq are assigned by Submit.
 func limitOrder(id int64, side Side, price, qty int64) *Order {
 	return &Order{ID: id, EmitenID: emiten, ParticipantID: 1, Side: side, Type: Limit, Price: price, Qty: qty}
 }
@@ -14,7 +13,6 @@ func marketOrder(id int64, side Side, qty int64) *Order {
 	return &Order{ID: id, EmitenID: emiten, ParticipantID: 1, Side: side, Type: Market, Qty: qty}
 }
 
-// Test #1 — ordered insert.
 func TestOrderedInsert(t *testing.T) {
 	e := NewEngine(emiten)
 	// No crossing prices, so all three rest in the book.
@@ -40,7 +38,6 @@ func TestOrderedInsert(t *testing.T) {
 	}
 }
 
-// Test #2 — simple full match.
 func TestSimpleMatch(t *testing.T) {
 	e := NewEngine(emiten)
 	sell := limitOrder(1, Sell, 8000, 100)
@@ -67,7 +64,7 @@ func TestSimpleMatch(t *testing.T) {
 	}
 }
 
-// Test #3 — partial fill: the larger order returns to the book with correct Remaining.
+// The larger order returns to the book with correct Remaining.
 func TestPartialFill(t *testing.T) {
 	e := NewEngine(emiten)
 	e.Submit(limitOrder(1, Sell, 8000, 40))
@@ -89,7 +86,7 @@ func TestPartialFill(t *testing.T) {
 	}
 }
 
-// Test #4 — multi-level sweep: one order consumes several passive orders across price levels.
+// Multi-level sweep: one order consumes several passive orders across price levels.
 func TestMultiLevel(t *testing.T) {
 	e := NewEngine(emiten)
 	e.Submit(limitOrder(1, Sell, 8000, 50))
@@ -122,7 +119,7 @@ func TestMultiLevel(t *testing.T) {
 	}
 }
 
-// Test #5 — market order: executes with no price limit; leftover is Cancelled and never booked.
+// A market order executes with no price limit; leftover is Cancelled and never booked.
 func TestMarketOrder(t *testing.T) {
 	e := NewEngine(emiten)
 	e.Submit(limitOrder(1, Sell, 8000, 30))
@@ -152,7 +149,7 @@ func TestMarketOrder(t *testing.T) {
 	}
 }
 
-// Test #6 — time-priority tie-break: same price, smaller Seq fills first. Do not skip.
+// Time-priority tie-break: same price, smaller Seq fills first. Do not skip.
 func TestTimePriorityTieBreak(t *testing.T) {
 	e := NewEngine(emiten)
 	first := limitOrder(1, Sell, 8000, 50)  // arrives first
@@ -215,9 +212,8 @@ func TestSpecManualScenario(t *testing.T) {
 	}
 }
 
-// snapshotBook captures id/remaining/status of every resting order on both
-// sides, in book order, so a test can assert the book is bit-identical after
-// an unwind.
+// Captures id/remaining/status of every resting order on both sides, in book
+// order, so a test can assert the book is bit-identical after an unwind.
 type bookRow struct {
 	id, remaining int64
 	status        Status

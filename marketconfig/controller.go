@@ -13,11 +13,8 @@ type Controller struct {
 	svc *Service
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service) *Controller { return &Controller{svc: svc} }
 
-// Get handles GET /api/admin/config.
-//
 //	@Summary		Read trading parameters
 //	@Description	The exchange-wide rules in force right now, as the order path is
 //	@Description	actually enforcing them.
@@ -50,8 +47,6 @@ func (c *Controller) Get(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToConfigView(c.svc.Current()))
 }
 
-// Update handles PUT /api/admin/config.
-//
 //	@Summary		Update trading parameters
 //	@Description	Changes the exchange-wide trading rules. The new value is persisted and
 //	@Description	takes effect on the very next order — no restart, and it survives one.

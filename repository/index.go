@@ -19,7 +19,6 @@ type Index struct {
 	db
 }
 
-// NewIndex returns an index repository backed by pool.
 func NewIndex(pool *pgxpool.Pool) *Index {
 	return &Index{db{pool: pool}}
 }
@@ -29,8 +28,6 @@ var (
 	_ index.PriceRepository = (*Index)(nil)
 )
 
-// LoadIndex returns the stored definition for an index code.
-//
 // The IHSG row is seeded by migration 014, so a missing row means the migration
 // has not run — a deployment fault, reported as an error rather than papered
 // over with a default. Starting the exchange with an invented divisor would
@@ -47,8 +44,6 @@ func (r *Index) LoadIndex(ctx context.Context, kode string) (index.Definition, e
 	return d, nil
 }
 
-// SaveDivisor writes a restated divisor and returns the definition as written.
-//
 // RETURNING gives the caller the database's own view of what landed, which is
 // what the cache is then set from — the same discipline marketconfig follows, so
 // the enforced value and the stored value cannot diverge.
@@ -67,7 +62,6 @@ func (r *Index) SaveDivisor(ctx context.Context, indexID int16, divisor float64)
 	return d, nil
 }
 
-// InsertSnapshot appends one computed level to the history.
 func (r *Index) InsertSnapshot(ctx context.Context, indexID int64, s index.Snapshot) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO index_snapshot (index_id, value, market_cap, divisor, members, captured_at)
@@ -79,7 +73,7 @@ func (r *Index) InsertSnapshot(ctx context.Context, indexID int64, s index.Snaps
 	return nil
 }
 
-// ListSnapshots returns one page of history, newest first.
+// Newest first.
 //
 // The NULL-or-match pattern on from/to keeps one query for all four filter
 // combinations, matching how the trade repository handles its optional filters.
@@ -99,7 +93,7 @@ func (r *Index) ListSnapshots(ctx context.Context, indexID int16, from, to *time
 		}, indexID, from, to, limit, offset)
 }
 
-// CountSnapshots totals the same filter, for the pagination envelope.
+// Same filter as ListSnapshots, for the pagination envelope.
 func (r *Index) CountSnapshots(ctx context.Context, indexID int16, from, to *time.Time) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `
@@ -114,8 +108,7 @@ func (r *Index) CountSnapshots(ctx context.Context, indexID int16, from, to *tim
 	return n, nil
 }
 
-// LastPrices returns the most recent trade price for every instrument that has
-// traded, keyed by emiten id.
+// Keyed by emiten id.
 //
 // One query for the whole market rather than one per instrument: the index
 // values every emiten on each computation, and a query per member would make the

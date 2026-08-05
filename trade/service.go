@@ -26,18 +26,15 @@ var intervals = map[string]int64{
 // DefaultCandleLimit caps how many bars one request returns.
 const DefaultCandleLimit = 500
 
-// Service reads executions.
 type Service struct {
 	dir  *market.Directory
 	repo Repository
 }
 
-// NewService wires the trade domain to the directory and its repository.
 func NewService(dir *market.Directory, repo Repository) *Service {
 	return &Service{dir: dir, repo: repo}
 }
 
-// Trades returns one page of the raw execution log.
 func (s *Service) Trades(ctx context.Context, emitenKode, participantKode string, page, limit int) ([]Record, int, error) {
 	f, err := s.filter(emitenKode, participantKode)
 	if err != nil {
@@ -54,7 +51,7 @@ func (s *Service) Trades(ctx context.Context, emitenKode, participantKode string
 	return records, total, err
 }
 
-// Transactions returns one page of a broker's fills, seen from its own side.
+// Fills are seen from the broker's own side.
 //
 // The broker is passed in by the caller from the authenticated identity, never
 // from a query parameter — this is a read-authorisation boundary.
@@ -74,7 +71,6 @@ func (s *Service) Transactions(ctx context.Context, participantID int64, emitenK
 	return txs, total, err
 }
 
-// Ticks returns one page of an instrument's raw executions.
 func (s *Service) Ticks(ctx context.Context, kode string, page, limit int) ([]Tick, int, error) {
 	e, ok := s.dir.Emiten(kode)
 	if !ok {
@@ -91,7 +87,6 @@ func (s *Service) Ticks(ctx context.Context, kode string, page, limit int) ([]Ti
 	return ticks, total, err
 }
 
-// Candles returns an instrument's OHLC bars at the requested interval.
 func (s *Service) Candles(ctx context.Context, kode, interval string) ([]Candle, error) {
 	e, ok := s.dir.Emiten(kode)
 	if !ok {
@@ -105,10 +100,10 @@ func (s *Service) Candles(ctx context.Context, kode, interval string) ([]Candle,
 	return s.repo.ListCandles(ctx, e.ID, seconds, DefaultCandleLimit)
 }
 
-// Intervals lists the accepted candle widths, for error messages and docs.
+// For error messages and docs.
 func Intervals() []string { return []string{"1m", "5m", "1h", "1d"} }
 
-// ResolveParticipant maps a broker code to its id, for the admin filter.
+// For the admin filter.
 func (s *Service) ResolveParticipant(kode string) (int64, bool) {
 	p, ok := s.dir.Participant(kode)
 	return p.ID, ok

@@ -90,7 +90,6 @@ type ActionDetailView struct {
 	Entries []EntryView `json:"entries"`
 }
 
-// EntryView is one broker's share of an executed action.
 type EntryView struct {
 	// Broker code the shares or cash went to.
 	Participant string `json:"participant" example:"YP"`

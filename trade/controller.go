@@ -15,13 +15,10 @@ type Controller struct {
 	codes Codes
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service, codes Codes) *Controller {
 	return &Controller{svc: svc, codes: codes}
 }
 
-// ListTrades handles GET /api/admin/trades.
-//
 //	@Summary		List executions
 //	@Description	The raw execution log, newest first, optionally filtered by emiten or
 //	@Description	participant. Each row is one buy order matched against one sell order.
@@ -51,8 +48,6 @@ func (c *Controller) ListTrades(w http.ResponseWriter, r *http.Request) {
 		httpx.NewPage(c.codes.ToTradeViews(records), page, limit, total))
 }
 
-// AdminTransactions handles GET /api/admin/transactions.
-//
 //	@Summary		Transaction history for any broker
 //	@Description	Fills seen from a broker's own side. Omit `participant` to include every
 //	@Description	broker. A broker that matched its own resting order appears twice for
@@ -85,8 +80,6 @@ func (c *Controller) AdminTransactions(w http.ResponseWriter, r *http.Request) {
 	c.writeTransactions(w, r, id)
 }
 
-// MyTransactions handles GET /api/participant/transactions.
-//
 //	@Summary		Own transaction history
 //	@Description	Every fill for the authenticated broker, newest first, seen from its own
 //	@Description	side — so `side` and `counterparty` are relative to the caller.
@@ -125,8 +118,6 @@ func (c *Controller) writeTransactions(w http.ResponseWriter, r *http.Request, p
 		httpx.NewPage(c.codes.ToTransactionViews(txs), page, limit, total))
 }
 
-// Ticks handles GET /api/participant/emiten/{kode}/prices.
-//
 //	@Summary		Price history (raw executions)
 //	@Description	Every execution for an instrument, newest first. Build candles from this
 //	@Description	client-side, or use the candles endpoint.
@@ -152,8 +143,6 @@ func (c *Controller) Ticks(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, httpx.NewPage(ToTickViews(ticks), page, limit, total))
 }
 
-// Candles handles GET /api/participant/emiten/{kode}/candles.
-//
 //	@Summary		Price history (OHLC candles)
 //	@Description	Executions aggregated into open/high/low/close bars with volume, newest
 //	@Description	bar first. Buckets are UTC-aligned. Open and close follow execution
@@ -183,7 +172,6 @@ func (c *Controller) Candles(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, ToCandleViews(candles))
 }
 
-// writeTradeError maps a service error onto the response.
 func writeTradeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrEmitenNotFound):

@@ -12,7 +12,6 @@ import (
 	"bekasi-automatic-trading-system/platform/postgres"
 )
 
-// LoadParticipant returns every broker (exchange participant), ordered by code.
 func (r *Master) LoadParticipant(ctx context.Context) ([]market.Participant, error) {
 	return postgres.QueryAll(ctx, r.pool, "participant",
 		`SELECT id, kode, nama FROM participant ORDER BY kode`,
@@ -29,7 +28,6 @@ type Participant struct {
 	db
 }
 
-// NewParticipant returns a participant repository backed by pool.
 func NewParticipant(pool *pgxpool.Pool) *Participant {
 	return &Participant{db{pool: pool}}
 }
@@ -46,8 +44,8 @@ func scanParticipant(rows pgx.Rows) (participant.Record, error) {
 	return rec, err
 }
 
-// Create inserts a broker. A duplicate kode becomes ErrDuplicate so the caller can
-// answer 409 rather than 500.
+// A duplicate kode becomes ErrDuplicate so the caller can answer 409 rather than
+// 500.
 func (r *Participant) Create(ctx context.Context, kode, nama string) (participant.Record, error) {
 	rec := participant.Record{Kode: kode, Nama: nama}
 	err := r.pool.QueryRow(ctx,
@@ -62,8 +60,6 @@ func (r *Participant) Create(ctx context.Context, kode, nama string) (participan
 	return rec, nil
 }
 
-// FindByAPIKeyHash resolves a key hash to its broker.
-//
 // This runs on every authenticated participant request, which is why
 // idx_participant_api_key_hash exists: it makes the lookup an index hit rather
 // than a scan, and lets revocation take effect immediately without a cache.
@@ -81,7 +77,6 @@ func (r *Participant) FindByAPIKeyHash(ctx context.Context, hash string) (partic
 	return scanParticipant(row)
 }
 
-// FindByKode resolves a broker by its code.
 func (r *Participant) FindByKode(ctx context.Context, kode string) (participant.Record, error) {
 	row, err := r.pool.Query(ctx,
 		`SELECT `+participantColumns+` FROM participant WHERE kode = $1`, kode)
@@ -96,13 +91,12 @@ func (r *Participant) FindByKode(ctx context.Context, kode string) (participant.
 	return scanParticipant(row)
 }
 
-// List returns every broker, ordered by code.
 func (r *Participant) List(ctx context.Context) ([]participant.Record, error) {
 	return postgres.QueryAll(ctx, r.pool, "participant list",
 		`SELECT `+participantColumns+` FROM participant ORDER BY kode`, scanParticipant)
 }
 
-// SetAPIKey stores a key hash and its prefix, replacing any previous key.
+// Replaces any previous key.
 func (r *Participant) SetAPIKey(ctx context.Context, kode, hash, prefix string) error {
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE participant
@@ -117,7 +111,6 @@ func (r *Participant) SetAPIKey(ctx context.Context, kode, hash, prefix string) 
 	return nil
 }
 
-// ClearAPIKey revokes a broker's key.
 func (r *Participant) ClearAPIKey(ctx context.Context, kode string) error {
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE participant

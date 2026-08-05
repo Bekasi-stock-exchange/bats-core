@@ -16,13 +16,10 @@ type Controller struct {
 	codes Codes
 }
 
-// NewController returns a controller backed by svc.
 func NewController(svc *Service, codes Codes) *Controller {
 	return &Controller{svc: svc, codes: codes}
 }
 
-// Mine handles GET /api/participant/wallet.
-//
 //	@Summary		Own cash balance
 //	@Description	The authenticated broker's current cash balance.
 //	@Description
@@ -50,8 +47,6 @@ func (c *Controller) Mine(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, c.codes.ToWalletView(rec))
 }
 
-// All handles GET /api/admin/wallets.
-//
 //	@Summary		Cash balances across brokers
 //	@Description	Every broker's cash balance, or one broker's when `participant` is given.
 //	@Tags			admin
@@ -92,8 +87,6 @@ func (c *Controller) All(w http.ResponseWriter, r *http.Request) {
 		httpx.NewPage(c.codes.ToWalletViews(records), page, limit, total))
 }
 
-// Adjust handles POST /api/admin/wallets.
-//
 //	@Summary		Fund or debit a broker's wallet
 //	@Description	Moves cash into or out of one broker's balance and returns the balance it
 //	@Description	settles at. A positive `amount` credits the broker, a negative one debits

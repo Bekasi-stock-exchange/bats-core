@@ -21,8 +21,6 @@ type OrderRecord struct {
 	Seq           int64
 }
 
-// TradeRecord is the persisted shape of an executed trade.
-//
 // The participant ids are stored alongside the order ids so per-broker history is
 // an indexed lookup on this table, rather than a join back through orders filtered
 // by an OR across both sides — which no index can serve.
@@ -74,8 +72,6 @@ type Execution struct {
 	Wallets []WalletDelta
 }
 
-// Repository persists orders and trades.
-//
 // The interface is declared here, in the package that consumes it, and satisfied
 // by the repository package — so the service depends on this behaviour, not on a
 // database handle.
@@ -86,7 +82,7 @@ type Repository interface {
 	// and final state are known.
 	NextOrderID(ctx context.Context) (int64, error)
 
-	// SaveExecution writes an entire matching outcome in one transaction.
+	// Writes an entire matching outcome in one transaction.
 	SaveExecution(ctx context.Context, ex Execution) error
 
 	// CancelOrder marks a resting order cancelled, keeping whatever quantity it
@@ -105,7 +101,7 @@ type Repository interface {
 	// rebuild the in-memory book and its reservations at startup.
 	LoadOpenOrders(ctx context.Context) ([]market.OpenOrder, error)
 
-	// ListOrders returns one page of order history, newest first.
+	// Newest first.
 	ListOrders(ctx context.Context, f OrderFilter, limit, offset int) ([]OrderRecord, error)
 	CountOrders(ctx context.Context, f OrderFilter) (int, error)
 }

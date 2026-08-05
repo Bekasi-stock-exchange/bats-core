@@ -15,8 +15,6 @@ type PriceStats struct {
 	Lowest  *int64
 }
 
-// PriceStatsRepository reads price statistics for one emiten.
-//
 // Declared here and satisfied by the repository package, which owns the trades
 // table — so this package gains no database dependency.
 type PriceStatsRepository interface {

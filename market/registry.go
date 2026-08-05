@@ -116,9 +116,6 @@ type HaltObserver interface {
 	Resumed(emitenID int64)
 }
 
-// WithBreaker installs the circuit breaker policy and the observer notified when
-// it trips.
-//
 // A setter rather than a constructor parameter, matching how the order service
 // takes its trade observer: the registry is built early in the composition root,
 // from master data, while the config cache and the persistence that records a
@@ -130,7 +127,7 @@ func (r *Registry) WithBreaker(p BreakerPolicy, o HaltObserver) {
 	r.halts = o
 }
 
-// clock returns the time source, defaulting to time.Now.
+// Defaults to time.Now.
 func (r *Registry) clock() time.Time {
 	if r.now != nil {
 		return r.now()
@@ -160,7 +157,7 @@ type book struct {
 	haltedUntil time.Time
 }
 
-// halted reports whether the book is halted as of now. Caller must hold r.mu.
+// Caller must hold r.mu.
 //
 // Compared against the clock on each read rather than cleared by a timer,
 // because those two can disagree: a timer that has fired but whose goroutine has
@@ -276,8 +273,6 @@ func (r *Registry) AddBook(e Emiten) {
 	r.books[e.ID] = newBook(e, r.seq)
 }
 
-// ActivateBook opens a dormant instrument's book for matching.
-//
 // The active flag is copied onto the book at registration, so flipping the
 // database row and the directory entry is not enough — Submit consults this copy,
 // and without this call an activated instrument would keep rejecting orders with
@@ -291,7 +286,7 @@ func (r *Registry) ActivateBook(emitenID int64) {
 	}
 }
 
-// CreditShares adds shares to a broker's holding outside of any trade.
+// Applies outside of any trade.
 //
 // It exists for primary-market issuance: an IPO allocation puts shares into a
 // participant's hands without a matching sell side, which applyTrades — built
@@ -306,15 +301,13 @@ func (r *Registry) CreditShares(participantID, emitenID, shares int64) {
 	r.pos.addHeld(participantID, emitenID, shares)
 }
 
-// Holding reports a broker's current holding of one emiten.
 func (r *Registry) Holding(participantID, emitenID int64) int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.pos.Held(participantID, emitenID)
 }
 
-// AdjustCash moves a broker's cash balance outside of any trade, and reports the
-// balance it settles at.
+// Moves a balance outside of any trade, and reports the balance it settles at.
 //
 // It exists for administrative funding: an operator crediting or debiting a
 // broker has no counterparty, which applyTrades — built around a buyer and a
@@ -340,8 +333,8 @@ func (r *Registry) AdjustCash(participantID, delta int64) (int64, error) {
 	return r.pos.Cash(participantID), nil
 }
 
-// AvailableCash reports what a broker may still spend: its balance, minus what
-// its resting buy orders have already promised away.
+// What a broker may still spend: its balance, minus what its resting buy orders
+// have already promised away.
 func (r *Registry) AvailableCash(participantID int64) int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -616,7 +609,6 @@ type HaltState struct {
 	ResumesAt time.Time
 }
 
-// Halt reports the halt state of one emiten.
 func (r *Registry) Halt(emitenID int64) (HaltState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -631,8 +623,7 @@ func (r *Registry) Halt(emitenID int64) (HaltState, error) {
 	return HaltState{Halted: true, ResumesAt: b.haltedUntil}, nil
 }
 
-// HaltUntil places an instrument under a halt that expires at until, and reports
-// whether the emiten exists.
+// Reports whether the emiten exists.
 //
 // It exists for two callers: the operator who halts an instrument by hand, and
 // startup, which restores halts that were still running when the process
@@ -696,8 +687,7 @@ func (r *Registry) ExpireHalts() []int64 {
 	return resumed
 }
 
-// SetReference updates the session anchor the price band is measured from, and
-// reports whether the emiten exists.
+// Reports whether the emiten exists.
 //
 // Called at the session boundary, and when an instrument is activated at its
 // offering price. Not called on every trade: an anchor that moved with the
@@ -715,7 +705,7 @@ func (r *Registry) SetReference(emitenID, price int64) bool {
 	return true
 }
 
-// Band returns the price range in force for one emiten, and whether one applies.
+// Reports whether a band applies at all.
 func (r *Registry) Band(emitenID int64) (Band, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -727,7 +717,6 @@ func (r *Registry) Band(emitenID int64) (Band, bool) {
 	return r.bandLocked(b)
 }
 
-// Snapshot returns the current book state for one emiten.
 func (r *Registry) Snapshot(emitenID int64) (BookState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -739,8 +728,8 @@ func (r *Registry) Snapshot(emitenID int64) (BookState, error) {
 	return b.state(), nil
 }
 
-// SnapshotAll returns the book state for each of the given emiten ids, in order.
-// Unknown ids are skipped. One lock acquisition covers the whole set.
+// Results are in the order of emitenIDs; unknown ids are skipped. One lock
+// acquisition covers the whole set.
 func (r *Registry) SnapshotAll(emitenIDs []int64) []BookState {
 	out := make([]BookState, 0, len(emitenIDs))
 
@@ -755,7 +744,7 @@ func (r *Registry) SnapshotAll(emitenIDs []int64) []BookState {
 	return out
 }
 
-// state aggregates the book into price levels. Caller must hold r.mu.
+// Aggregates the book into price levels. Caller must hold r.mu.
 func (b *book) state() BookState {
 	bk := b.engine.Book()
 	return BookState{

@@ -8,7 +8,6 @@ import (
 	"bekasi-automatic-trading-system/engine"
 )
 
-// stubPolicy is a fixed circuit breaker configuration.
 type stubPolicy struct {
 	bps      int64
 	duration time.Duration
@@ -17,7 +16,6 @@ type stubPolicy struct {
 func (p stubPolicy) EmitenBandBPS() int64        { return p.bps }
 func (p stubPolicy) HaltDuration() time.Duration { return p.duration }
 
-// recordingObserver captures the halts a registry announces.
 type recordingObserver struct {
 	halted  []haltTrigger
 	resumed []int64
@@ -31,9 +29,8 @@ func (o *recordingObserver) Halted(emitenID, price, reference int64, until time.
 
 func (o *recordingObserver) Resumed(emitenID int64) { o.resumed = append(o.resumed, emitenID) }
 
-// testRegistry builds a registry holding one emiten anchored at reference, with
-// both brokers funded well past anything these tests spend, and a clock the test
-// controls.
+// Holds one emiten anchored at reference, with both brokers funded well past
+// anything these tests spend, and a clock the test controls.
 func testRegistry(t *testing.T, reference int64, policy BreakerPolicy) (*Registry, *recordingObserver, *time.Time) {
 	t.Helper()
 
@@ -60,7 +57,7 @@ func testRegistry(t *testing.T, reference int64, policy BreakerPolicy) (*Registr
 	return reg, obs, &now
 }
 
-// submit places one order, discarding the book state.
+// Places one order, discarding the book state.
 func submit(reg *Registry, id int64, participant int64, side engine.Side, price, qty int64) ([]engine.Trade, error) {
 	o := &engine.Order{
 		ID: id, EmitenID: 1, ParticipantID: participant,

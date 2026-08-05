@@ -14,7 +14,6 @@ import (
 // report. It is a transient startup condition, not a client error.
 var ErrNoLevel = errors.New("index: no level computed yet")
 
-// Service computes and serves the composite index.
 type Service struct {
 	dir    *market.Directory
 	repo   Repository
@@ -22,13 +21,11 @@ type Service struct {
 	cache  *Cache
 }
 
-// NewService wires the index domain to the market kernel, its stores, and the
-// cache readers hit.
 func NewService(dir *market.Directory, repo Repository, prices PriceRepository, cache *Cache) *Service {
 	return &Service{dir: dir, repo: repo, prices: prices, cache: cache}
 }
 
-// Load reads the stored definition and computes an opening level.
+// Reads the stored definition and computes an opening level.
 //
 // Called once at startup, before the server accepts a request. The definition
 // must load or startup fails — a missing row means migration 014 has not run,
@@ -52,8 +49,8 @@ func (s *Service) Load(ctx context.Context) error {
 	return s.Recompute(ctx)
 }
 
-// bootstrapDivisor sets the divisor so the index opens at its base value, but
-// only if it has never been set.
+// Sets the divisor so the index opens at its base value, but only if it has
+// never been set.
 //
 // The guard is the important half. Once the index has been running, the divisor
 // carries every listing adjustment ever applied, and recomputing it from current
@@ -86,8 +83,7 @@ func (s *Service) bootstrapDivisor(ctx context.Context, def Definition) error {
 	return nil
 }
 
-// marketCap totals the value of every listed instrument, and reports how many
-// were priced out of how many exist.
+// Reports how many instruments were priced out of how many exist.
 //
 // An instrument with no reference price is skipped rather than counted as 0.
 // market.Emiten.ReferencePrice returns nil precisely to avoid claiming an
@@ -133,9 +129,7 @@ func (s *Service) marketCap(ctx context.Context) (int64, int, int) {
 	return total, members, len(emitens)
 }
 
-// Recompute values the market and refreshes the cached level.
-//
-// It does not persist a snapshot. This runs on the trade path, where a database
+// Does not persist a snapshot. This runs on the trade path, where a database
 // write per execution would put the index's storage cost onto matching latency;
 // history is captured by Capture on its own schedule instead.
 //
@@ -166,8 +160,6 @@ func (s *Service) Recompute(ctx context.Context) error {
 	return nil
 }
 
-// Current returns the index level in force.
-//
 // Served from the cache, not recomputed, so a client polling the level does not
 // each time trigger a full market valuation.
 func (s *Service) Current() (Level, error) {
@@ -178,8 +170,6 @@ func (s *Service) Current() (Level, error) {
 	return l, nil
 }
 
-// Capture persists the current level as a history point.
-//
 // Separate from Recompute so that how often the index is *computed* (every
 // trade) and how often it is *stored* (periodically) are independent decisions.
 // Tying them together would either bloat the history with a row per execution or
@@ -200,8 +190,7 @@ func (s *Service) Capture(ctx context.Context) error {
 	})
 }
 
-// History returns one page of past index levels, newest first, plus the total
-// for the pagination envelope.
+// Newest first, plus the total for the pagination envelope.
 func (s *Service) History(ctx context.Context, from, to *time.Time, page, limit int) ([]Snapshot, int, error) {
 	def := s.cache.Definition()
 
@@ -222,7 +211,7 @@ func (s *Service) History(ctx context.Context, from, to *time.Time, page, limit 
 	return snaps, total, nil
 }
 
-// ListingAdded restates the divisor so a new listing does not move the index.
+// Restates the divisor so a new listing does not move the index.
 //
 // This is the mechanism that makes the index a price series rather than a
 // running total of market capitalisation. When an instrument lists, total market
@@ -265,8 +254,8 @@ func (s *Service) ListingAdded(ctx context.Context, capBefore int64) error {
 	return s.Recompute(ctx)
 }
 
-// MarketCap exposes the current total for a caller that needs to capture it
-// before a listing, so it can be passed to AdjustForListing afterwards.
+// For a caller that needs to capture the total before a listing, so it can be
+// passed to AdjustForListing afterwards.
 func (s *Service) MarketCap(ctx context.Context) int64 {
 	cap, _, _ := s.marketCap(ctx)
 	return cap

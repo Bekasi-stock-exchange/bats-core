@@ -12,11 +12,9 @@ type Codes struct {
 	dir *market.Directory
 }
 
-// NewCodes returns a resolver backed by the directory.
 func NewCodes(dir *market.Directory) Codes { return Codes{dir: dir} }
 
-// ToHoldingViews converts holdings into their API shape. Always non-nil so the
-// field marshals as [] rather than null.
+// Always non-nil so the field marshals as [] rather than null.
 func (c Codes) ToHoldingViews(records []Record) []HoldingView {
 	out := make([]HoldingView, 0, len(records))
 	for _, rec := range records {

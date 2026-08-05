@@ -48,8 +48,6 @@ type UpdateRequest struct {
 	HaltDurationSeconds *int64 `json:"halt_duration_seconds,omitempty" format:"int64" example:"120"`
 }
 
-// ToConfigView renders settings for the wire.
-//
 // The duration is carried as a time.Duration internally and published as whole
 // seconds, matching both the column and the request field. Validation rejects
 // anything that is not a whole number of seconds, so the conversion here is

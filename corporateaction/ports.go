@@ -53,7 +53,6 @@ const (
 	Dividend Jenis = "DIVIDEND"
 )
 
-// Valid reports whether j is one of the four kinds.
 func (j Jenis) Valid() bool {
 	switch j {
 	case Split, ReverseSplit, Bonus, Dividend:
@@ -62,8 +61,7 @@ func (j Jenis) Valid() bool {
 	return false
 }
 
-// AffectsShares reports whether this kind restates holdings and listed_shares.
-// Everything but a dividend does.
+// Everything but a dividend restates holdings and listed_shares.
 func (j Jenis) AffectsShares() bool { return j != Dividend }
 
 // Status is where an action stands in its lifecycle.
@@ -142,22 +140,19 @@ type Holding struct {
 // package — so this package depends on a behaviour rather than on a database
 // handle.
 type Repository interface {
-	// CreateAction records an announced action and returns it with its id.
 	CreateAction(ctx context.Context, rec Record) (Record, error)
 
-	// ListActions returns one page of actions, newest first. A nil emitenID means
-	// every instrument; a non-nil one scopes to that instrument alone.
+	// Newest first. A nil emitenID means every instrument; a non-nil one scopes
+	// to that instrument alone.
 	ListActions(ctx context.Context, emitenID *int64, limit, offset int) ([]Record, error)
 
-	// CountActions returns the total matching the same filter, for the pagination
-	// envelope.
+	// Totals the same filter, for the pagination envelope.
 	CountActions(ctx context.Context, emitenID *int64) (int, error)
 
-	// FindAction returns one action, or ErrNotFound.
+	// Returns ErrNotFound when the id does not exist.
 	FindAction(ctx context.Context, id int64) (Record, error)
 
-	// EntriesByAction returns what each broker received, for the detail view. It
-	// is empty for an action that has not executed.
+	// Empty for an action that has not executed.
 	EntriesByAction(ctx context.Context, actionID int64) ([]Entry, error)
 
 	// HoldersOf returns every broker holding this instrument, with a non-zero

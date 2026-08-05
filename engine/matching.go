@@ -28,9 +28,9 @@ type Sequencer struct {
 	trade int64
 }
 
-// NewSequencer returns a Sequencer whose next order/trade Seq continue past the
-// highest values already persisted (pass 0 for a fresh database). This keeps Seq
-// monotonic and never reused across process restarts.
+// The next order/trade Seq continue past the highest values already persisted
+// (pass 0 for a fresh database), keeping Seq monotonic and never reused across
+// process restarts.
 func NewSequencer(lastOrderSeq, lastTradeSeq int64) *Sequencer {
 	return &Sequencer{order: lastOrderSeq, trade: lastTradeSeq}
 }
@@ -45,21 +45,18 @@ func (s *Sequencer) nextTrade() int64 {
 	return s.trade
 }
 
-// NewEngine returns an engine with an empty book for the given emiten, using a
-// private zero-based Sequencer. Convenient for tests; production wiring shares
-// one Sequencer via NewEngineWithSequencer.
+// Uses a private zero-based Sequencer. Convenient for tests; production wiring
+// shares one Sequencer via NewEngineWithSequencer.
 func NewEngine(emitenID int64) *Engine {
 	return &Engine{book: NewOrderBook(emitenID), seq: NewSequencer(0, 0)}
 }
 
-// NewEngineWithSequencer returns an engine for the given emiten that draws Seq
-// values from the shared sequencer.
 func NewEngineWithSequencer(emitenID int64, seq *Sequencer) *Engine {
 	return &Engine{book: NewOrderBook(emitenID), seq: seq}
 }
 
-// Book exposes the order book for read-only inspection (order book snapshots,
-// tests). Callers must not mutate the returned slices.
+// Read-only inspection (order book snapshots, tests). Callers must not mutate
+// the returned slices.
 func (e *Engine) Book() *OrderBook {
 	return e.book
 }
@@ -197,7 +194,7 @@ func (e *Engine) unwind(o *Order, trades []Trade, opposite []*Order, seq Sequenc
 	*e.seq = seq
 }
 
-// removeOrder deletes o from s by identity, preserving the order of the rest.
+// Deletes by identity, preserving the order of the rest.
 func removeOrder(s []*Order, o *Order) []*Order {
 	for i, cur := range s {
 		if cur == o {
@@ -229,8 +226,8 @@ func (e *Engine) Restore(o *Order) {
 	}
 }
 
-// Find returns the resting order with the given id, or nil if the book does not
-// hold it — because it never existed, already filled, or was already cancelled.
+// Returns nil if the book does not hold the order — it never existed, already
+// filled, or was already cancelled.
 //
 // Read-only: the caller must not mutate the returned order. It exists so the
 // registry can inspect an order (its owner, its side, its remainder) before
@@ -313,7 +310,6 @@ func (e *Engine) EstimateCost(o *Order) (cost int64, ok bool) {
 	return cost, true
 }
 
-// oppositeBest returns the best resting order on the side opposite to o.
 func (e *Engine) oppositeBest(o *Order) *Order {
 	if o.Side == Buy {
 		return e.book.bestAsk()
@@ -321,8 +317,8 @@ func (e *Engine) oppositeBest(o *Order) *Order {
 	return e.book.bestBid()
 }
 
-// removeBest pops the best resting order on the side opposite to o (the passive
-// order that just filled).
+// Pops the best resting order on the side opposite to o — the passive order
+// that just filled.
 func (e *Engine) removeBest(o *Order) {
 	if o.Side == Buy {
 		e.book.popBestAsk()
@@ -331,8 +327,6 @@ func (e *Engine) removeBest(o *Order) {
 	}
 }
 
-// crosses reports whether the incoming order o can match against passive.
-//
 // A market order has no price limit, so it always crosses whatever liquidity is
 // available. A limit buy crosses when its price is at least the ask; a limit
 // sell crosses when its price is at most the bid.
@@ -346,8 +340,6 @@ func (e *Engine) crosses(o, passive *Order) bool {
 	return o.Price <= passive.Price
 }
 
-// sides returns the incoming and passive orders sorted into buy and sell.
-//
 // It replaces the previous buyID/sellID pair: a trade now records each side's
 // participant as well as its order id, and resolving the orders once keeps those
 // two facts from drifting apart.

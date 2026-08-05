@@ -66,7 +66,6 @@ type TradeObserver interface {
 	TradesExecuted()
 }
 
-// Service accepts orders: validate, match, persist, publish.
 type Service struct {
 	dir    *market.Directory
 	reg    *market.Registry
@@ -93,13 +92,11 @@ type Service struct {
 	submitMu sync.Mutex
 }
 
-// NewService wires the write side against the market kernel, the repository, and
-// the exchange's trading limits.
 func NewService(dir *market.Directory, reg *market.Registry, hub *market.Hub, repo Repository, limits Limits) *Service {
 	return &Service{dir: dir, reg: reg, hub: hub, repo: repo, limits: limits}
 }
 
-// Observe registers the observer notified after each committed matching pass.
+// The observer is notified after each committed matching pass.
 //
 // A setter rather than a constructor parameter because the observer is optional
 // and, in the composition root, is built after this service: the index service
@@ -335,12 +332,9 @@ func (s *Service) History(ctx context.Context, emitenKode, participantKode, stat
 	return records, total, err
 }
 
-// Directory exposes the master-data lookup the transformer needs to turn stored
-// ids back into codes.
+// The transformer needs this to turn stored ids back into codes.
 func (s *Service) Directory() *market.Directory { return s.dir }
 
-// resolve validates a command and resolves its codes to master data.
-//
 // This is the business-rule boundary: emiten and participant must exist, side and
 // type must be known, qty must be positive, and a limit order needs a positive
 // price. A market order carries no price, so its price is normalized to 0.
@@ -397,7 +391,6 @@ func (s *Service) resolve(cmd SubmitCommand) (market.Emiten, market.Participant,
 	return em, part, side, typ, price, nil
 }
 
-// buildExecution assembles the persistable outcome of a matching pass.
 func buildExecution(o *engine.Order, trades []engine.Trade) Execution {
 	ex := Execution{
 		Order: OrderRecord{

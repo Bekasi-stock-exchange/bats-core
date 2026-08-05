@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// New opens a connection pool from dsn and verifies it with a ping. It fails
-// fast: a bad or unreachable DSN returns an error at startup rather than later.
+// Verifies the pool with a ping so it fails fast: a bad or unreachable DSN
+// returns an error at startup rather than later.
 func New(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
@@ -26,9 +26,7 @@ func New(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// QueryAll runs sql and maps every row through scan.
-//
-// It exists because the row-collecting loop (Query, defer Close, for Next, Scan,
+// Exists because the row-collecting loop (Query, defer Close, for Next, Scan,
 // append, check rows.Err) was previously copy-pasted per table with only the
 // scan target differing.
 func QueryAll[T any](ctx context.Context, pool *pgxpool.Pool, what, sql string, scan func(pgx.Rows) (T, error), args ...any) ([]T, error) {

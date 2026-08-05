@@ -5,7 +5,6 @@ import "bekasi-automatic-trading-system/market"
 // percentScale rounds percentages to two decimal places.
 const percentScale = 100
 
-// ToEmitenView converts master data into the list shape.
 func ToEmitenView(e market.Emiten) EmitenView {
 	return EmitenView{
 		Kode:           e.Kode,
@@ -17,8 +16,7 @@ func ToEmitenView(e market.Emiten) EmitenView {
 	}
 }
 
-// ToEmitenViews converts a batch, preserving order. Always non-nil so the field
-// marshals as [] rather than null.
+// Always non-nil so the field marshals as [] rather than null.
 func ToEmitenViews(emitens []market.Emiten) []EmitenView {
 	out := make([]EmitenView, 0, len(emitens))
 	for _, e := range emitens {
@@ -27,8 +25,6 @@ func ToEmitenViews(emitens []market.Emiten) []EmitenView {
 	return out
 }
 
-// ToEmitenDetail combines master data with price statistics.
-//
 // Market value is derived here rather than stored: it depends on the reference
 // price, so one trade would otherwise invalidate the stored value of every holder
 // of that instrument.

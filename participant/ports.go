@@ -28,11 +28,8 @@ type Record struct {
 	APIKeyIssuedAt *time.Time
 }
 
-// HasAPIKey reports whether a key has been issued to this broker.
 func (r Record) HasAPIKey() bool { return r.APIKeyPrefix != nil }
 
-// Repository persists brokers and their key hashes.
-//
 // Declared here, in the package that consumes it, and satisfied by the repository
 // package — so this package depends on a behaviour, not on a database handle.
 type Repository interface {

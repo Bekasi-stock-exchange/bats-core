@@ -8,7 +8,7 @@ import (
 	"bekasi-automatic-trading-system/engine"
 )
 
-// noPersist is a cancel callback that always commits.
+// A cancel callback that always commits.
 func noPersist(*engine.Order) error { return nil }
 
 // A cancelled sell leaves the book and gives its shares back, so the broker can

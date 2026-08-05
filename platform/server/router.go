@@ -43,7 +43,7 @@ type Deps struct {
 	Docs        *docs.Controller
 }
 
-// Handler builds the route table. Go 1.22+ method-based patterns; stdlib only.
+// Go 1.22+ method-based patterns; stdlib only.
 //
 // Two authentication tiers, never mixed:
 //
